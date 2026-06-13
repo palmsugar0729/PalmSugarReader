@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../models/book.dart';
+import '../services/bookmark_service.dart';
 import '../theme.dart';
 import '../utils/file_utils.dart';
 import 'reader_screen.dart';
+import 'settings_screen.dart';
 
-/// 首页 — 最近文件列表 + 文件选择 + 批量删除
+/// 首页 — 最近文件列表 + 文件选择 + 批量删除 + 书签持久化
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -17,6 +19,19 @@ class _HomeScreenState extends State<HomeScreen> {
   final List<Book> _recentBooks = [];
   bool _isSelectionMode = false;
   final Set<int> _selectedIndices = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBookmarks();
+  }
+
+  Future<void> _loadBookmarks() async {
+    final bookmarks = await BookmarkService.loadBookmarks();
+    if (bookmarks.isNotEmpty && mounted) {
+      setState(() => _recentBooks.addAll(bookmarks));
+    }
+  }
 
   Future<void> _pickFile() async {
     final result = await FilePicker.platform.pickFiles(
@@ -32,6 +47,10 @@ class _HomeScreenState extends State<HomeScreen> {
           _recentBooks.removeWhere((b) => b.filePath == book.filePath);
           _recentBooks.insert(0, book);
         });
+        // 持久化：仅对 PDF/EPUB 保存书签
+        if (book.isBookmarkable) {
+          BookmarkService.addOrUpdate(book);
+        }
         _openBook(book);
       } else {
         _showUnsupportedDialog(book.title);
@@ -39,10 +58,27 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _openBook(Book book) {
-    Navigator.of(context).push(
+  Future<void> _openBook(Book book) async {
+    await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => ReaderScreen(book: book)),
     );
+    // 返回后刷新列表（可能有进度更新）
+    _refreshBookmarks();
+  }
+
+  Future<void> _refreshBookmarks() async {
+    final bookmarks = await BookmarkService.loadBookmarks();
+    if (!mounted) return;
+    setState(() {
+      // 合并书签进度到当前列表
+      for (final bm in bookmarks) {
+        final idx = _recentBooks.indexWhere((b) => b.filePath == bm.filePath);
+        if (idx >= 0) {
+          _recentBooks[idx].lastPosition = bm.lastPosition;
+          _recentBooks[idx].lastReadAt = bm.lastReadAt;
+        }
+      }
+    });
   }
 
   void _showUnsupportedDialog(String fileName) {
@@ -110,6 +146,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 final sorted = _selectedIndices.toList()
                   ..sort((a, b) => b.compareTo(a));
                 for (final i in sorted) {
+                  final book = _recentBooks[i];
+                  if (book.isBookmarkable) {
+                    BookmarkService.remove(book.filePath);
+                  }
                   _recentBooks.removeAt(i);
                 }
                 _selectedIndices.clear();
@@ -125,7 +165,17 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _removeSingle(int index) {
+    final book = _recentBooks[index];
+    if (book.isBookmarkable) {
+      BookmarkService.remove(book.filePath);
+    }
     setState(() => _recentBooks.removeAt(index));
+  }
+
+  void _openSettings() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const SettingsScreen()),
+    );
   }
 
   @override
@@ -148,6 +198,11 @@ class _HomeScreenState extends State<HomeScreen> {
     return AppBar(
       title: const Text('PalmSugarReader'),
       actions: [
+        IconButton(
+          icon: const Icon(Icons.settings_outlined),
+          tooltip: '设置',
+          onPressed: _openSettings,
+        ),
         if (_recentBooks.isNotEmpty)
           IconButton(
             icon: const Icon(Icons.checklist),
@@ -283,6 +338,8 @@ class _HomeScreenState extends State<HomeScreen> {
         return Dismissible(
           key: ValueKey(book.id),
           direction: DismissDirection.endToStart,
+          dismissThresholds: const {DismissDirection.endToStart: 0.25},
+          movementDuration: const Duration(milliseconds: 200),
           background: Container(
             alignment: Alignment.centerRight,
             padding: const EdgeInsets.only(right: 20),
@@ -322,7 +379,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               title: Text(book.title),
-              subtitle: Text(book.format.displayName),
+              subtitle: Text(book.lastReadAt != null
+                  ? '${book.format.displayName} · 上次: ${_formatDate(book.lastReadAt!)}'
+                  : book.format.displayName),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => _openBook(book),
               onLongPress: _toggleSelectionMode,
@@ -342,5 +401,9 @@ class _HomeScreenState extends State<HomeScreen> {
       BookFormat.image => Icons.image,
       BookFormat.unknown => Icons.insert_drive_file,
     };
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.month}/${date.day} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
   }
 }

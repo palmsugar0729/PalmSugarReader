@@ -83,4 +83,39 @@ class Book {
 
   bool get isReadable =>
       format != BookFormat.unknown;
+
+  /// 是否支持书签（仅 PDF / EPUB）
+  bool get isBookmarkable =>
+      format == BookFormat.pdf || format == BookFormat.epub;
+
+  /// 序列化为 JSON
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'filePath': filePath,
+        'format': format.name,
+        'addedAt': addedAt.toIso8601String(),
+        if (lastReadAt != null)
+          'lastReadAt': lastReadAt!.toIso8601String(),
+        if (lastPosition != null) 'lastPosition': lastPosition,
+      };
+
+  /// 从 JSON 反序列化
+  factory Book.fromJson(Map<String, dynamic> json) {
+    return Book(
+      id: json['id'] as String,
+      title: json['title'] as String,
+      filePath: json['filePath'] as String,
+      format: BookFormat.values.firstWhere(
+        (f) => f.name == json['format'],
+        orElse: () => BookFormat.unknown,
+      ),
+      addedAt: DateTime.tryParse(json['addedAt'] as String? ?? '') ??
+          DateTime.now(),
+      lastReadAt: json['lastReadAt'] != null
+          ? DateTime.tryParse(json['lastReadAt'] as String)
+          : null,
+      lastPosition: (json['lastPosition'] as num?)?.toDouble(),
+    );
+  }
 }

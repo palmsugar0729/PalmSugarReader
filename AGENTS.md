@@ -58,5 +58,12 @@ PalmSugarReader/
 - [x] Flutter 项目初始化
 - [x] P0 格式解析与阅读器（PDF / EPUB / TXT / MD / 图片）
 - [x] 阅读器核心 UI（首页 + 路由壳 + 5 种格式阅读器）
+- [x] 格式转换（TXT ↔ MD、EPUB → MD、MD → PDF，含链式中转）
+- [x] PDF 缩放控制（+/- 按钮）
+- [x] EPUB 大文件加载修复
+- [x] MD → PDF 中日文字体支持（Noto Sans SC）
 - [ ] 标注系统
-- [ ] 格式转换
+- [ ] 键盘快捷键（PgUp/PgDn/Home/End）
+- [ ] 阅读体验增强（缩放滑条 / Ctrl+滚轮 / 右键菜单 / 文件记忆）
+- [ ] 设置页面
+- [ ] 批量导入

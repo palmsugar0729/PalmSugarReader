@@ -28,10 +28,12 @@ class _EpubReaderState extends State<EpubReader> {
       final file = File(widget.filePath);
       final bytes = await file.readAsBytes();
 
-      // 在后台 isolate-friendly 的 Future 中解析 EPUB
-      final document = Future(() => epub_view.EpubReader.readBook(bytes));
-
-      _epubController = epub_view.EpubController(document: document);
+      // 完整加载 EPUB 后再创建 controller，避免大文件跳页问题
+      final epubBook =
+          await epub_view.EpubReader.readBook(bytes);
+      _epubController = epub_view.EpubController(
+        document: Future.value(epubBook),
+      );
 
       setState(() => _isLoading = false);
     } catch (e) {

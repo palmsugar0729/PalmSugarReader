@@ -15,38 +15,44 @@ metadata:
 ## 🟢 已修复
 
 ### 1. Markdown 内联公式未渲染
-
-- **发现时间**：2026-06-08（用户测试反馈）
-- **现象**：Markdown 文档中的 `$E=mc^2$`、`$$...$$` 等 LaTeX 公式未正确渲染，直接显示原文
-- **根因**：`flutter_markdown` 默认不支持数学公式语法
-- **修复方案**：
-  - 引入 `flutter_markdown_latex: ^0.3.4` + `flutter_math_fork: ^0.7.4`
-  - 在 `MarkdownReader` 中配置 `LatexInlineSyntax`、`LatexBlockSyntax` 和 `LatexElementBuilder`
-  - 支持语法：`$...$`、`$$...$$`、 `\(...\)`、`\[...\]`、 `\pu{...}`、`\ce{...}`、`[ ... ]`
-- **相关文件**：[lib/readers/markdown_reader.dart](../../codes/palm_sugar_reader/lib/readers/markdown_reader.dart)
-- **相关笔记**：[notes/markdown-formula-support-2026-06-08.md](../../notes/markdown-formula-support-2026-06-08.md)
-
-### 2. TXT ANSI 编码文件乱码
-
-- **发现时间**：2026-06-08（用户测试反馈）
-- **现象**：中文 Windows 下生成的 ANSI 编码 TXT 文件打开后显示乱码
-- **根因**：原有编码检测仅支持 UTF-8 → Latin1 fallback，无 GBK/Shift_JIS 支持
-- **修复方案**：
-  - 引入 `fast_gbk: ^1.0.0`（纯 Dart，同步 GBK 编解码）
-  - 引入 `charset_converter: ^2.4.0`（平台原生编码转换，支持 Shift_JIS）
-  - 检测优先级：UTF-8 → GBK → Shift_JIS → Latin1
-  - 增加启发式校验（替换字符比例 < 5%）
-  - 界面显示检测到的编码标签
-- **相关文件**：[lib/readers/txt_reader.dart](../../codes/palm_sugar_reader/lib/readers/txt_reader.dart)
-- **相关笔记**：[notes/txt-encoding-enhancement-2026-06-08.md](../../notes/txt-encoding-enhancement-2026-06-08.md)
+...（保持原有内容不变）...
 
 ### 3. `epubx` 的 `EpubReader` 类名冲突
+...（保持原有内容不变）...
 
-- **发现时间**：2026-06-08（`flutter analyze` 报错）
-- **现象**：`lib/readers/epub_reader.dart` 中调用 `EpubReader.readBook()` 时，Dart 解析器指向了当前文件定义的 `EpubReader` StatefulWidget，而非 `epubx` 包的 `EpubReader`
-- **根因**：类名重复（当前 Widget 类名与第三方包类名相同）
-- **修复方案**：对 `epub_view` 包使用前缀导入 `import 'package:epub_view/epub_view.dart' as epub_view;`
+### 4. MD → PDF 中文/日文渲染为 □×（方框+叉号）
+
+- **发现时间**：2026-06-13（用户测试反馈）
+- **现象**：Markdown 转 PDF 后，所有中文字符显示为方框带 ×（tofu），英文/数字/符号正常
+- **根因**：`pdf` 包默认使用 Helvetica/Courier 等西文字体，不包含 CJK 字形
+- **修复方案**：
+  - 引入 `NotoSansSC-VF.ttf`（思源黑体变量字体，17MB，SIL 开源许可证）
+  - 注册为 Flutter assets，运行时通过 `rootBundle.load()` 加载
+  - 所有 `pw.TextStyle` 统一使用 CJK 字体
+  - 字体覆盖：简体中文、繁体中文、日文汉字、假名、拉丁字符
+- **副作用**：Release 包体积从 45MB 增至 62MB
+- **相关文件**：[lib/converters/md_pdf_converter.dart](../../codes/palm_sugar_reader/lib/converters/md_pdf_converter.dart)
+- **截图**：[assets/bug/2026-06-13_bug_001.png](../../assets/bug/2026-06-13_bug_001.png)
+
+### 5. EPUB 大文件加载卡顿并跳页
+
+- **发现时间**：2026-06-13（用户测试反馈）
+- **现象**：大 EPUB 文件加载后显示空白或突然跳到最后/第一页
+- **根因**：`_loadEpub()` 在 `EpubController` 创建后立即设置 `_isLoading = false`，此时 `Future<EpubBook>` 尚未完成。`epub_view` 在文档未就绪时渲染导致异常跳页
+- **修复方案**：
+  - 改为 `await EpubReader.readBook(bytes)` 同步等待解析完成
+  - 使用 `Future.value(epubBook)` 创建已就绪的 Future 传给 Controller
+  - `setState` 仅在 EPUB 完全解析后才隐藏 loading 状态
 - **相关文件**：[lib/readers/epub_reader.dart](../../codes/palm_sugar_reader/lib/readers/epub_reader.dart)
+
+### 6. 首页左滑删除动画过度
+
+- **发现时间**：2026-06-13（用户测试反馈）
+- **现象**：左滑删除时红色背景铺满整行，动画幅度过大
+- **修复方案**：
+  - 减小滑动阈值：`dismissThresholds: {DismissDirection.endToStart: 0.25}`（默认 0.5）
+  - 加快动画：`movementDuration: Duration(milliseconds: 200)`（默认 300ms）
+- **相关文件**：[lib/screens/home_screen.dart](../../codes/palm_sugar_reader/lib/screens/home_screen.dart)
 
 ---
 

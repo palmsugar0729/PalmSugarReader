@@ -1,14 +1,11 @@
-import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
-import 'package:charset_converter/charset_converter.dart';
-import 'package:fast_gbk/fast_gbk.dart';
 import 'package:flutter/material.dart';
 import '../theme.dart';
+import '../utils/encoding_utils.dart';
 
 /// TXT 阅读器 — 自动检测多语言编码，支持滚动阅读
 ///
-/// 编码检测优先级：
+/// 编码检测优先级（使用 EncodingUtils）：
 /// 1. UTF-8（最通用）
 /// 2. GBK / GB2312（中文 Windows ANSI）
 /// 3. Shift_JIS（日文）
@@ -38,7 +35,7 @@ class _TxtReaderState extends State<TxtReader> {
     try {
       final file = File(widget.filePath);
       final bytes = await file.readAsBytes();
-      final result = await _detectEncoding(bytes);
+      final result = await EncodingUtils.detect(bytes);
 
       setState(() {
         _content = result.text;
@@ -51,44 +48,6 @@ class _TxtReaderState extends State<TxtReader> {
         _isLoading = false;
       });
     }
-  }
-
-  /// 多编码自动检测
-  Future<_EncodingResult> _detectEncoding(List<int> bytes) async {
-    // 1. 优先尝试 UTF-8
-    try {
-      Utf8Codec().decode(bytes, allowMalformed: false);
-      return _EncodingResult(utf8.decode(bytes), 'UTF-8');
-    } catch (_) {}
-
-    // 2. 尝试 GBK（中文 ANSI）
-    try {
-      final text = gbk.decode(bytes);
-      if (_looksLikeValidText(text)) {
-        return _EncodingResult(text, 'GBK');
-      }
-    } catch (_) {}
-
-    // 3. 尝试 Shift_JIS（日文）
-    try {
-      final text = await CharsetConverter.decode(
-        'SHIFT_JIS',
-        Uint8List.fromList(bytes),
-      );
-      if (_looksLikeValidText(text)) {
-        return _EncodingResult(text, 'Shift_JIS');
-      }
-    } catch (_) {}
-
-    // 4. Latin1 兜底
-    return _EncodingResult(latin1.decode(bytes), 'Latin1');
-  }
-
-  /// 简单启发式：如果文本中替换字符（�）过多，认为编码不正确
-  bool _looksLikeValidText(String text) {
-    if (text.isEmpty) return false;
-    final replacementCount = text.runes.where((r) => r == 0xFFFD).length;
-    return replacementCount < text.length * 0.05;
   }
 
   @override
@@ -144,11 +103,4 @@ class _TxtReaderState extends State<TxtReader> {
       ),
     );
   }
-}
-
-class _EncodingResult {
-  final String text;
-  final String encoding;
-
-  _EncodingResult(this.text, this.encoding);
 }
