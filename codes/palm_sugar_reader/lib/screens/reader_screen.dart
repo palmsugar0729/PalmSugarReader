@@ -7,75 +7,128 @@ import '../readers/txt_reader.dart';
 import '../readers/markdown_reader.dart';
 import '../readers/epub_reader.dart';
 import '../readers/pdf_reader.dart';
+import '../main.dart';
+import '../services/settings_service.dart';
 import '../theme.dart';
+import '../widgets/top_menu_bar.dart';
+import 'settings_screen.dart';
 
 /// 阅读器路由壳 — 根据文件格式分发到对应阅读器
-class ReaderScreen extends StatelessWidget {
+///
+/// 顶部菜单栏按钮：
+/// - 标注工具（待实现，灰色）
+/// - 格式转换（PopMenu 弹出可选目标格式）
+/// - 字号（待实现，灰色）
+/// - 背景色（待实现，灰色）
+/// - 账号（待实现，灰色）
+/// - 设置
+class ReaderScreen extends StatefulWidget {
   final Book book;
 
   const ReaderScreen({super.key, required this.book});
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(book.title),
-        actions: [
-          _buildConvertMenu(context),
-        ],
-      ),
-      body: _buildReader(),
+  State<ReaderScreen> createState() => _ReaderScreenState();
+}
+
+class _ReaderScreenState extends State<ReaderScreen> {
+  Book get book => widget.book;
+  final GlobalKey _convertButtonKey = GlobalKey();
+  final GlobalKey<PdfReaderState> _pdfReaderKey = GlobalKey<PdfReaderState>();
+  final GlobalKey<EpubReaderState> _epubReaderKey = GlobalKey<EpubReaderState>();
+  final GlobalKey<ImageReaderState> _imageReaderKey = GlobalKey<ImageReaderState>();
+
+  void _cycleTheme() {
+    final notifier = SettingsProvider.of(context);
+    final next = switch (notifier.themeMode) {
+      ThemeMode.light => ThemeMode.dark,
+      ThemeMode.dark => ThemeMode.system,
+      ThemeMode.system => ThemeMode.light,
+    };
+    notifier.setThemeMode(next);
+    SettingsService.save(AppSettings(
+      themeMode: next,
+      fontSize: notifier.fontSize,
+    ));
+  }
+
+  void _showAnnotHelp() {
+    if (book.format == BookFormat.pdf) {
+      _pdfReaderKey.currentState?.enterAnnotationMode();
+    } else if (book.format == BookFormat.epub) {
+      _epubReaderKey.currentState?.enterAnnotationMode();
+    } else if (book.format == BookFormat.image) {
+      _imageReaderKey.currentState?.enterAnnotationMode();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('当前格式不支持标注'), duration: Duration(seconds: 2)),
+      );
+    }
+  }
+
+  void _openSettings() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const SettingsScreen()),
     );
   }
 
-  Widget _buildConvertMenu(BuildContext context) {
+  /// 显示格式转换菜单
+  void _showConvertMenu() {
     final availableTargets = FormatConverter.getAvailableTargets(book.format);
+    if (availableTargets.isEmpty) return;
 
-    if (availableTargets.isEmpty) {
-      return const SizedBox.shrink();
-    }
+    final RenderBox? renderBox =
+        _convertButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    final position = renderBox?.localToGlobal(Offset.zero) ?? Offset.zero;
+    final size = renderBox?.size ?? const Size(44, 44);
 
-    return PopupMenuButton<BookFormat>(
-      icon: const Icon(Icons.more_vert),
-      tooltip: '更多操作',
-      onSelected: (target) => _startConversion(context, target),
-      itemBuilder: (context) {
-        return [
-          const PopupMenuItem<BookFormat>(
-            enabled: false,
-            child: Text(
-              '格式转换',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: AppTheme.textSecondary,
-                fontSize: 12,
+    showMenu<BookFormat>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        position.dx,
+        position.dy + size.height,
+        position.dx + size.width,
+        position.dy + size.height,
+      ),
+      items: [
+        const PopupMenuItem<BookFormat>(
+          enabled: false,
+          child: Text(
+            '格式转换',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: AppTheme.textSecondary,
+              fontSize: 12,
+            ),
+          ),
+        ),
+        ...availableTargets.map(
+          (target) => PopupMenuItem<BookFormat>(
+            value: target,
+            child: ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                target == BookFormat.markdown
+                    ? Icons.code
+                    : target == BookFormat.txt
+                        ? Icons.description
+                        : Icons.picture_as_pdf,
+                color: AppTheme.primaryDark,
+              ),
+              title: Text('转为 ${target.displayName}'),
+              subtitle: Text(
+                _conversionDescription(book.format, target),
+                style: const TextStyle(fontSize: 12),
               ),
             ),
           ),
-          ...availableTargets.map(
-            (target) => PopupMenuItem<BookFormat>(
-              value: target,
-              child: ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(
-                  target == BookFormat.markdown
-                      ? Icons.code
-                      : target == BookFormat.txt
-                          ? Icons.description
-                          : Icons.picture_as_pdf,
-                  color: AppTheme.primaryDark,
-                ),
-                title: Text('转为 ${target.displayName}'),
-                subtitle: Text(
-                  _conversionDescription(book.format, target),
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ),
-            ),
-          ),
-        ];
-      },
-    );
+        ),
+      ],
+    ).then((target) {
+      if (target != null && mounted) {
+        _startConversion(target);
+      }
+    });
   }
 
   String _conversionDescription(BookFormat source, BookFormat target) {
@@ -94,8 +147,7 @@ class ReaderScreen extends StatelessWidget {
     return '通过 Markdown 中转转换';
   }
 
-  Future<void> _startConversion(
-      BuildContext context, BookFormat target) async {
+  Future<void> _startConversion(BookFormat target) async {
     final sourceFormat = book.format;
     final defaultExt = FormatConverter.targetExtension(target);
     final defaultName = book.title;
@@ -111,7 +163,7 @@ class ReaderScreen extends StatelessWidget {
     if (outputPath == null) return; // 用户取消
 
     // 2. 显示加载状态
-    if (!context.mounted) return;
+    if (!mounted) return;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -127,10 +179,11 @@ class ReaderScreen extends StatelessWidget {
     );
 
     // 4. 关闭加载
-    if (!context.mounted) return;
+    if (!mounted) return;
     Navigator.of(context).pop(); // dismiss loading
 
     // 5. 显示结果
+    if (!mounted) return;
     if (result.success) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -166,11 +219,11 @@ class ReaderScreen extends StatelessWidget {
 
   Widget _buildReader() {
     return switch (book.format) {
-      BookFormat.image => ImageReader(filePath: book.filePath),
+      BookFormat.image => ImageReader(key: _imageReaderKey, filePath: book.filePath),
       BookFormat.txt => TxtReader(filePath: book.filePath),
       BookFormat.markdown => MarkdownReader(filePath: book.filePath),
-      BookFormat.pdf => PdfReader(filePath: book.filePath),
-      BookFormat.epub => EpubReader(filePath: book.filePath),
+      BookFormat.pdf => PdfReader(key: _pdfReaderKey, filePath: book.filePath),
+      BookFormat.epub => EpubReader(key: _epubReaderKey, filePath: book.filePath),
       BookFormat.unknown => _buildPlaceholder('不支持的文件格式'),
     };
   }
@@ -184,6 +237,56 @@ class ReaderScreen extends StatelessWidget {
           const SizedBox(height: 16),
           Text(message, style: const TextStyle(color: Colors.grey)),
         ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasConvertTargets =
+        FormatConverter.getAvailableTargets(book.format).isNotEmpty;
+
+    return TopMenuOverlay(
+      buttons: [
+        TopMenuButton(
+          tooltip: '标注工具',
+          icon: Icons.edit,
+          enabled: book.format == BookFormat.pdf ||
+              book.format == BookFormat.epub,
+          onPressed: _showAnnotHelp,
+        ),
+        TopMenuButton(
+          tooltip: '格式转换',
+          icon: Icons.transform,
+          enabled: hasConvertTargets,
+          onPressed: _showConvertMenu,
+        ),
+        const TopMenuButton(
+          tooltip: '字号',
+          icon: Icons.format_size,
+          enabled: false,
+        ),
+        TopMenuButton(
+          tooltip: '背景色',
+          icon: Icons.brightness_6,
+          onPressed: _cycleTheme,
+        ),
+        const TopMenuButton(
+          tooltip: '账号',
+          icon: Icons.person_outline,
+          enabled: false,
+        ),
+        TopMenuButton(
+          tooltip: '设置',
+          icon: Icons.settings_outlined,
+          onPressed: _openSettings,
+        ),
+      ],
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(book.title),
+        ),
+        body: _buildReader(),
       ),
     );
   }

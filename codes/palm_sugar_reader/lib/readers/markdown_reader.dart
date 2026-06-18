@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_markdown_latex/flutter_markdown_latex.dart';
 import 'package:markdown/markdown.dart' as md;
+import '../main.dart';
 import '../theme.dart';
 
 /// Markdown 阅读器 — 渲染为富文本，支持 LaTeX 数学公式
@@ -70,6 +71,8 @@ class _MarkdownReaderState extends State<MarkdownReader> {
       );
     }
 
+    final fontSize = SettingsProvider.of(context).fontSize;
+
     return Markdown(
       data: _content,
       selectable: true,
@@ -77,7 +80,7 @@ class _MarkdownReaderState extends State<MarkdownReader> {
       builders: {
         'latex': LatexElementBuilder(
           textStyle: TextStyle(
-            fontSize: 16,
+            fontSize: fontSize,
             color: AppTheme.textPrimary,
           ),
         ),
@@ -85,24 +88,24 @@ class _MarkdownReaderState extends State<MarkdownReader> {
       inlineSyntaxes: [LatexInlineSyntax()],
       blockSyntaxes: [LatexBlockSyntax()],
       styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
-        p: TextStyle(fontSize: 16, height: 1.8, color: AppTheme.textPrimary),
+        p: TextStyle(fontSize: fontSize, height: 1.8, color: AppTheme.textPrimary),
         h1: TextStyle(
-          fontSize: 28,
+          fontSize: fontSize * 1.75,
           fontWeight: FontWeight.bold,
           color: AppTheme.textPrimary,
         ),
         h2: TextStyle(
-          fontSize: 24,
+          fontSize: fontSize * 1.5,
           fontWeight: FontWeight.bold,
           color: AppTheme.textPrimary,
         ),
         h3: TextStyle(
-          fontSize: 20,
+          fontSize: fontSize * 1.25,
           fontWeight: FontWeight.w600,
           color: AppTheme.textPrimary,
         ),
         code: TextStyle(
-          fontSize: 14,
+          fontSize: fontSize * 0.85,
           backgroundColor: AppTheme.primaryLight.withAlpha(51),
           color: AppTheme.primaryDark,
         ),
@@ -111,7 +114,7 @@ class _MarkdownReaderState extends State<MarkdownReader> {
           borderRadius: BorderRadius.circular(8),
         ),
         blockquote: TextStyle(
-          fontSize: 16,
+          fontSize: fontSize,
           fontStyle: FontStyle.italic,
           color: AppTheme.textSecondary,
         ),

@@ -67,6 +67,16 @@ class BookmarkService {
     await saveBookmarks(books);
   }
 
+  /// 清除所有书签
+  static Future<void> clear() async {
+    try {
+      final file = await _bookmarkFile;
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (_) {}
+  }
+
   /// 更新阅读进度
   static Future<void> updateProgress(
     String filePath,

@@ -1,9 +1,15 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../models/book.dart';
+import '../services/annotation_service.dart';
 import '../services/bookmark_service.dart';
 import '../theme.dart';
 import '../utils/file_utils.dart';
+import '../main.dart';
+import '../services/settings_service.dart';
+import '../widgets/top_menu_bar.dart';
 import 'reader_screen.dart';
 import 'settings_screen.dart';
 
@@ -41,21 +47,127 @@ class _HomeScreenState extends State<HomeScreen> {
     );
 
     if (result != null && result.files.single.path != null) {
-      final book = Book.fromFile(result.files.single.path!);
+      final path = result.files.single.path!;
+      final book = Book.fromFile(path);
       if (book.isReadable) {
-        setState(() {
-          _recentBooks.removeWhere((b) => b.filePath == book.filePath);
-          _recentBooks.insert(0, book);
-        });
-        // 持久化：仅对 PDF/EPUB 保存书签
-        if (book.isBookmarkable) {
-          BookmarkService.addOrUpdate(book);
+        // 先检测同目录批量导入（在打开书籍前弹窗，受设置开关控制）
+        final settings = await SettingsService.load();
+        if (settings.batchImport) {
+          await _checkSiblingFiles(path);
         }
-        _openBook(book);
+        _addAndOpenBook(book);
       } else {
         _showUnsupportedDialog(book.title);
       }
     }
+  }
+
+  /// 扫描同目录下的相似文件，提示批量导入
+  ///
+  /// 匹配规则：同目录 + 同扩展名 + 文件名前缀匹配
+  /// - 提取选中文件的"词干"（去掉尾部数字和分隔符）
+  /// - 其他文件的词干前缀匹配才被纳入
+  /// - 词干过短时（<2），退化为同扩展名匹配
+  Future<void> _checkSiblingFiles(String pickedPath) async {
+    try {
+      final pickedFile = File(pickedPath);
+      final dir = pickedFile.parent;
+      if (!await dir.exists()) return;
+
+      final pickedExt = FileUtils.getExtension(pickedPath);
+      final pickedName = _fileName(pickedPath);
+      final pickedStem = _extractStem(pickedName);
+
+      final existingPaths = _recentBooks.map((b) => b.filePath).toSet();
+      final siblings = <String>[];
+
+      await for (final entity in dir.list()) {
+        if (entity is File) {
+          final absPath = entity.absolute.path;
+          // 跳过自身和已添加的文件
+          if (absPath == pickedPath || existingPaths.contains(absPath)) {
+            continue;
+          }
+          // 必须同扩展名
+          if (FileUtils.getExtension(absPath) != pickedExt) continue;
+
+          // 前缀匹配
+          final candidateName = _fileName(absPath);
+          final candidateStem = _extractStem(candidateName);
+
+          if (pickedStem.length >= 2 &&
+              candidateStem.length >= 2 &&
+              (candidateStem == pickedStem ||
+                  candidateStem.startsWith(pickedStem) ||
+                  pickedStem.startsWith(candidateStem))) {
+            siblings.add(absPath);
+          } else if (pickedStem.length < 2 || candidateStem.length < 2) {
+            // 词干太短，退化为同扩展名匹配
+            siblings.add(absPath);
+          }
+        }
+      }
+
+      if (siblings.isEmpty || !mounted) return;
+
+      // 弹窗询问是否批量导入
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('批量导入'),
+          content: Text(
+            '检测到同目录下还有 ${siblings.length} 个可读文件，是否一并导入？\n\n'
+            '${siblings.take(5).map((p) => '· ${p.split(Platform.pathSeparator).last}').join('\n')}'
+            '${siblings.length > 5 ? '\n· ...还有 ${siblings.length - 5} 个' : ''}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('暂不'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('全部导入'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed == true && mounted) {
+        int imported = 0;
+        for (final siblingPath in siblings) {
+          final siblingBook = Book.fromFile(siblingPath);
+          if (siblingBook.isReadable) {
+            _recentBooks.removeWhere((b) => b.filePath == siblingBook.filePath);
+            _recentBooks.insert(0, siblingBook);
+            if (siblingBook.isBookmarkable) {
+              BookmarkService.addOrUpdate(siblingBook);
+            }
+            imported++;
+          }
+        }
+        if (imported > 0 && mounted) {
+          setState(() {});
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('已导入 $imported 个文件')),
+          );
+        }
+      }
+    } catch (_) {
+      // 静默失败，不影响正常阅读流程
+    }
+  }
+
+  /// 将书籍添加到列表并打开
+  void _addAndOpenBook(Book book) {
+    setState(() {
+      _recentBooks.removeWhere((b) => b.filePath == book.filePath);
+      _recentBooks.insert(0, book);
+    });
+    if (book.isBookmarkable) {
+      BookmarkService.addOrUpdate(book);
+    }
+    _openBook(book);
   }
 
   Future<void> _openBook(Book book) async {
@@ -150,6 +262,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   if (book.isBookmarkable) {
                     BookmarkService.remove(book.filePath);
                   }
+                  AnnotationService.clearForFile(book.filePath);
                   _recentBooks.removeAt(i);
                 }
                 _selectedIndices.clear();
@@ -169,7 +282,171 @@ class _HomeScreenState extends State<HomeScreen> {
     if (book.isBookmarkable) {
       BookmarkService.remove(book.filePath);
     }
+    AnnotationService.clearForFile(book.filePath);
     setState(() => _recentBooks.removeAt(index));
+  }
+
+  /// 右键上下文菜单
+  void _showContextMenu(BuildContext context, Book book, Offset position) {
+    showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        position.dx,
+        position.dy,
+        position.dx + 1,
+        position.dy + 1,
+      ),
+      items: [
+        PopupMenuItem<String>(
+          value: 'rename',
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: [
+              const Icon(Icons.edit_outlined, size: 16),
+              const SizedBox(width: 8),
+              const Text('重命名', style: TextStyle(fontSize: 13)),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(height: 1),
+        PopupMenuItem<String>(
+          value: 'delete',
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: const Row(
+            children: [
+              Icon(Icons.delete_outline, size: 16, color: Colors.red),
+              SizedBox(width: 8),
+              Text('删除', style: TextStyle(fontSize: 13, color: Colors.red)),
+            ],
+          ),
+        ),
+      ],
+    ).then((value) {
+      if (value == null || !mounted) return;
+      switch (value) {
+        case 'rename':
+          _renameBook(book);
+          break;
+        case 'delete':
+          _deleteSingle(book);
+          break;
+      }
+    });
+  }
+
+  /// 重命名文件
+  Future<void> _renameBook(Book book) async {
+    final controller = TextEditingController(text: book.title);
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('重命名文件'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: InputDecoration(
+            labelText: '新文件名（不含扩展名）',
+            hintText: book.title,
+            border: const OutlineInputBorder(),
+          ),
+          onSubmitted: (value) => Navigator.pop(ctx, value),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+
+    if (newName == null || newName.isEmpty || newName == book.title) return;
+
+    try {
+      final oldFile = File(book.filePath);
+      final ext = book.filePath.split('.').last;
+      final dir = oldFile.parent;
+      final newPath = '${dir.path}${Platform.pathSeparator}$newName.$ext';
+      await oldFile.rename(newPath);
+
+      // 更新 book 记录
+      if (!mounted) return;
+      setState(() {
+        final idx = _recentBooks.indexWhere((b) => b.id == book.id);
+        if (idx >= 0) {
+          final updated = Book.fromFile(newPath);
+          updated.lastReadAt = book.lastReadAt;
+          updated.lastPosition = book.lastPosition;
+          _recentBooks[idx] = updated;
+        }
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已重命名为 "$newName.$ext"')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('重命名失败: $e'),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+      }
+    }
+  }
+
+  /// 删除单个文件记录
+  void _deleteSingle(Book book) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('确认删除'),
+        content: Text('将 "${book.title}" 从列表中移除？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () {
+              final idx = _recentBooks.indexWhere((b) => b.id == book.id);
+              if (idx >= 0) {
+                if (book.isBookmarkable) {
+                  BookmarkService.remove(book.filePath);
+                }
+                AnnotationService.clearForFile(book.filePath);
+                setState(() => _recentBooks.removeAt(idx));
+              }
+              Navigator.pop(context);
+            },
+            child: const Text('删除', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _cycleTheme() {
+    final notifier = SettingsProvider.of(context);
+    final next = switch (notifier.themeMode) {
+      ThemeMode.light => ThemeMode.dark,
+      ThemeMode.dark => ThemeMode.system,
+      ThemeMode.system => ThemeMode.light,
+    };
+    notifier.setThemeMode(next);
+    SettingsService.save(AppSettings(
+      themeMode: next,
+      fontSize: notifier.fontSize,
+    ));
   }
 
   void _openSettings() {
@@ -180,36 +457,49 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: _isSelectionMode ? _buildSelectionAppBar() : _buildNormalAppBar(),
-      body: _recentBooks.isEmpty ? _buildEmptyState() : _buildBookList(),
-      floatingActionButton: _isSelectionMode
-          ? null
-          : FloatingActionButton.extended(
-              onPressed: _pickFile,
-              icon: const Icon(Icons.folder_open),
-              label: const Text('打开文件'),
-            ),
-      bottomNavigationBar: _isSelectionMode ? _buildBottomActionBar() : null,
+    return TopMenuOverlay(
+      buttons: [
+        TopMenuButton(
+          tooltip: '批量选择',
+          icon: Icons.checklist,
+          enabled: _recentBooks.isNotEmpty && !_isSelectionMode,
+          onPressed: _toggleSelectionMode,
+        ),
+        TopMenuButton(
+          tooltip: '背景色',
+          icon: Icons.brightness_6,
+          onPressed: _cycleTheme,
+        ),
+        const TopMenuButton(
+          tooltip: '账号',
+          icon: Icons.person_outline,
+          enabled: false,
+        ),
+        TopMenuButton(
+          tooltip: '设置',
+          icon: Icons.settings_outlined,
+          onPressed: _openSettings,
+        ),
+      ],
+      child: Scaffold(
+        appBar: _isSelectionMode ? _buildSelectionAppBar() : _buildNormalAppBar(),
+        body: _recentBooks.isEmpty ? _buildEmptyState() : _buildBookList(),
+        floatingActionButton: _isSelectionMode
+            ? null
+            : FloatingActionButton.extended(
+                onPressed: _pickFile,
+                icon: const Icon(Icons.folder_open),
+                label: const Text('打开文件'),
+              ),
+        bottomNavigationBar: _isSelectionMode ? _buildBottomActionBar() : null,
+      ),
     );
   }
 
   AppBar _buildNormalAppBar() {
     return AppBar(
       title: const Text('PalmSugarReader'),
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.settings_outlined),
-          tooltip: '设置',
-          onPressed: _openSettings,
-        ),
-        if (_recentBooks.isNotEmpty)
-          IconButton(
-            icon: const Icon(Icons.checklist),
-            tooltip: '批量选择',
-            onPressed: _toggleSelectionMode,
-          ),
-      ],
+      automaticallyImplyLeading: false,
     );
   }
 
@@ -369,22 +659,26 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             );
           },
-          child: Card(
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: AppTheme.primaryLight.withAlpha(128),
-                child: Icon(
-                  _getIconForFormat(book.format),
-                  color: AppTheme.primaryDark,
+          child: GestureDetector(
+            onSecondaryTapUp: (details) =>
+                _showContextMenu(context, book, details.globalPosition),
+            child: Card(
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: AppTheme.primaryLight.withAlpha(128),
+                  child: Icon(
+                    _getIconForFormat(book.format),
+                    color: AppTheme.primaryDark,
+                  ),
                 ),
+                title: Text(book.title),
+                subtitle: Text(book.lastReadAt != null
+                    ? '${book.format.displayName} · 上次: ${_formatDate(book.lastReadAt!)}'
+                    : book.format.displayName),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _openBook(book),
+                onLongPress: _toggleSelectionMode,
               ),
-              title: Text(book.title),
-              subtitle: Text(book.lastReadAt != null
-                  ? '${book.format.displayName} · 上次: ${_formatDate(book.lastReadAt!)}'
-                  : book.format.displayName),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => _openBook(book),
-              onLongPress: _toggleSelectionMode,
             ),
           ),
         );
@@ -405,5 +699,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
   String _formatDate(DateTime date) {
     return '${date.month}/${date.day} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
+  /// 提取文件名（不含扩展名）
+  static String _fileName(String path) {
+    final name = path.split(Platform.pathSeparator).last;
+    final dot = name.lastIndexOf('.');
+    return dot > 0 ? name.substring(0, dot) : name;
+  }
+
+  /// 提取文件名"词干"——去掉尾部数字和分隔符
+  ///
+  /// 例：chapter3 → chapter, vol01 → vol, 第3章 → 第, readme → readme
+  static String _extractStem(String name) {
+    // 去掉尾部数字及前面的分隔符（- _ . 空格）
+    final trimmed = name.replaceAll(RegExp(r'[\d\-_.\s]+$'), '');
+    return trimmed.isEmpty ? name : trimmed;
   }
 }

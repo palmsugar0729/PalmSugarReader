@@ -52,18 +52,22 @@ PalmSugarReader/
 - 变量/函数：camelCase（`openBook`）
 - 常量：camelCase 或 SCREAMING_SNAKE_CASE（视上下文）
 
-## 当前状态
+## 当前状态（2026-06-18）
 
-- [x] 需求文档（PRD.md）
-- [x] Flutter 项目初始化
-- [x] P0 格式解析与阅读器（PDF / EPUB / TXT / MD / 图片）
-- [x] 阅读器核心 UI（首页 + 路由壳 + 5 种格式阅读器）
-- [x] 格式转换（TXT ↔ MD、EPUB → MD、MD → PDF，含链式中转）
-- [x] PDF 缩放控制（+/- 按钮）
-- [x] EPUB 大文件加载修复
-- [x] MD → PDF 中日文字体支持（Noto Sans SC）
-- [ ] 标注系统
-- [ ] 键盘快捷键（PgUp/PgDn/Home/End）
-- [ ] 阅读体验增强（缩放滑条 / Ctrl+滚轮 / 右键菜单 / 文件记忆）
-- [ ] 设置页面
-- [ ] 批量导入
+- [x] 需求文档（PRD.md v0.4）
+- [x] Flutter 项目初始化（3.44.1）
+- [x] 5 种格式阅读器（PDF / EPUB / TXT / MD / 图片）
+- [x] EPUB 翻页阅读器（自研 epubx + PageView，懒加载秒开）
+- [x] 格式转换（TXT ↔ MD、EPUB → MD、MD → PDF，链式中转）
+- [x] PDF 缩放控制（+/- 按钮 + Ctrl+滚轮 + 百分比滑条）
+- [x] MD → PDF 字体（NotoSansSC-Regular，10MB，系统字体优先）
+- [x] 标注系统（统一 AnnotationLayer：高亮/划线/批注便签，自由拖拽，相对坐标，缩放跟随）
+- [x] 键盘快捷键（PDF↑↓/PgUp/PgDn/Home/End、EPUB←→/Home/End、图片 +/-）
+- [x] 右键上下文菜单（重命名、删除，精简样式）
+- [x] 批量导入（同目录同扩展名+词干匹配）
+- [x] 设置页面（批量导入/字号三档/背景色/字体导入/语言占位/帮助/清除历史）
+- [x] 顶部菜单栏（鼠标悬停展开，标注/转换/字号/背景/账号/设置）
+- [x] 书签持久化 + 进度恢复（JSON）
+- [ ] 格式转换扩展（MD→TXT、图片→PDF、MD→EPUB）
+- [ ] 用户登录系统
+- [ ] Bug: 缩放后视角无法平移

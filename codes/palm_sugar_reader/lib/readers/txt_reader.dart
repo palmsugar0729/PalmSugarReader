@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import '../main.dart';
 import '../theme.dart';
 import '../utils/encoding_utils.dart';
 
@@ -69,6 +70,8 @@ class _TxtReaderState extends State<TxtReader> {
       );
     }
 
+    final fontSize = SettingsProvider.of(context).fontSize;
+
     return Scrollbar(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -93,7 +96,7 @@ class _TxtReaderState extends State<TxtReader> {
             SelectableText(
               _content,
               style: TextStyle(
-                fontSize: 16,
+                fontSize: fontSize,
                 height: 1.8,
                 color: AppTheme.textPrimary,
               ),

@@ -5,25 +5,110 @@ import 'package:markdown/markdown.dart' as md;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../services/settings_service.dart';
 import 'format_converter.dart';
 
 /// Markdown → PDF 转换器
 ///
 /// 解析 Markdown 为 AST，使用 pdf 包渲染为 PDF 文档。
-/// 使用 Noto Sans SC 字体支持中文/日文/英文混排。
+///
+/// 字体加载优先级：
+/// 1. PDF 文档内嵌字体（由 pdf 包自动处理）
+/// 2. 用户导入的额外字体（设置页 → extraFonts）
+/// 3. Windows 系统 CJK 字体（C:\Windows\Fonts\）
+/// 4. 内置 Noto Sans SC Regular（10MB，SIL 开源）
 class MdPdfConverter {
   MdPdfConverter._();
 
-  /// 缓存的 CJK 字体，避免每次转换都重新加载
+  /// 缓存的字体，避免每次转换都重新加载
   static pw.Font? _cachedFont;
+  static bool _cacheTried = false;
 
-  /// 加载 CJK 字体（Noto Sans SC，覆盖简中/繁中/日文汉字/拉丁字符）
+  /// 加载 CJK 字体 — 按优先级链查找
   static Future<pw.Font> _loadCjkFont() async {
     if (_cachedFont != null) return _cachedFont!;
-    final fontData =
-        await rootBundle.load('assets/fonts/NotoSansSC-VF.ttf');
-    _cachedFont = pw.Font.ttf(fontData);
+    if (_cacheTried) {
+      // 已经尝试过所有来源，直接返回兜底字体
+      return await _loadBundledFont();
+    }
+
+    // 1. 用户导入的字体
+    final userFont = await _loadUserFont();
+    if (userFont != null) {
+      _cachedFont = userFont;
+      _cacheTried = true;
+      return _cachedFont!;
+    }
+
+    // 2. 系统 CJK 字体
+    final systemFont = await _loadSystemFont();
+    if (systemFont != null) {
+      _cachedFont = systemFont;
+      _cacheTried = true;
+      return _cachedFont!;
+    }
+
+    // 3. 内置字体（兜底）
+    _cacheTried = true;
+    _cachedFont = await _loadBundledFont();
     return _cachedFont!;
+  }
+
+  /// 加载用户导入的字体（取第一个可用的 .ttf/.otf）
+  static Future<pw.Font?> _loadUserFont() async {
+    try {
+      final settings = await SettingsService.load();
+      for (final path in settings.extraFonts) {
+        final file = File(path);
+        if (await file.exists()) {
+          final bytes = await file.readAsBytes();
+          return pw.Font.ttf(bytes.buffer.asByteData());
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// 加载 Windows 系统 CJK 字体
+  static Future<pw.Font?> _loadSystemFont() async {
+    if (!Platform.isWindows) return null;
+
+    const fontDir = r'C:\Windows\Fonts';
+    final dir = Directory(fontDir);
+    if (!await dir.exists()) return null;
+
+    // 按优先级排列的 CJK 字体文件名
+    const candidates = [
+      'msyh.ttc', // Microsoft YaHei (微软雅黑)
+      'msyhbd.ttc', // Microsoft YaHei Bold
+      'simhei.ttf', // SimHei (黑体)
+      'simsun.ttc', // SimSun (宋体)
+      'msgothic.ttc', // MS Gothic (日文)
+      'msmincho.ttc', // MS Mincho (日文)
+      'yugothb.ttc', // Yu Gothic (日文)
+      'malgun.ttf', // Malgun Gothic (韩文，含汉字)
+    ];
+
+    for (final name in candidates) {
+      final file = File('$fontDir\\$name');
+      if (await file.exists()) {
+        try {
+          final bytes = await file.readAsBytes();
+          return pw.Font.ttf(bytes.buffer.asByteData());
+        } catch (_) {
+          continue; // 尝试下一个
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /// 加载内置 Noto Sans SC Regular（兜底）
+  static Future<pw.Font> _loadBundledFont() async {
+    final fontData =
+        await rootBundle.load('assets/fonts/NotoSansSC-Regular.ttf');
+    return pw.Font.ttf(fontData);
   }
 
   /// Markdown → PDF

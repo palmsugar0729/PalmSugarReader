@@ -109,4 +109,50 @@ class AppTheme {
       ),
     );
   }
+
+  /// 暗色主题
+  static ThemeData get darkTheme {
+    final colorScheme = ColorScheme.fromSeed(
+      seedColor: primaryColor,
+      brightness: Brightness.dark,
+      primary: primaryColor,
+      onPrimary: textPrimary,
+      secondary: primaryLight,
+      onSecondary: textPrimary,
+      surface: const Color(0xFF1E1E1E),
+      onSurface: const Color(0xFFE0E0E0),
+      error: error,
+      onError: textInverse,
+    );
+
+    return ThemeData(
+      useMaterial3: true,
+      colorScheme: colorScheme,
+      scaffoldBackgroundColor: const Color(0xFF121212),
+      appBarTheme: AppBarTheme(
+        backgroundColor: const Color(0xFF1E1E1E),
+        foregroundColor: const Color(0xFFE0E0E0),
+        elevation: 0,
+        centerTitle: true,
+        titleTextStyle: TextStyle(
+          fontSize: 20,
+          fontWeight: FontWeight.w600,
+          color: const Color(0xFFE0E0E0),
+        ),
+      ),
+      cardTheme: CardThemeData(
+        color: const Color(0xFF2C2C2C),
+        elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: primaryColor,
+        foregroundColor: textPrimary,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+      listTileTheme: ListTileThemeData(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    );
+  }
 }
