@@ -11,11 +11,11 @@
 
 ## 执行流程（全部必做，不可跳过）
 
-按顺序执行以下 6 步，每步完成后再做下一步。用 TodoWrite 跟踪进度。
+按顺序执行以下 9 步，每步完成后再做下一步。用 TodoWrite 跟踪进度。
 
 ### Step 1: 更新开发日志
 
-**文件**：`docs/开发日志.md`
+**文件**：`notes/YYYY-MM-DD_开发日志.md`（按日期查找）
 
 1. 读取文件
 2. 在末尾追加（或更新当天已有条目）：
@@ -69,14 +69,48 @@ git push
 ### Step 6: 同步到 Obsidian
 
 调用 obsidian-sync skill，将以下文件同步到 Obsidian Vault：
-1. `docs/开发日志.md` → DevLogs/
+1. `notes/YYYY-MM-DD_开发日志.md` → DevLogs/
 2. `docs/bugs/*.md` → Pitfalls/（新增的 bug 文档）
-3. `docs/PRD.md`、`docs/数据库设计.md` → 项目相关
+3. `docs/PRD.md` → 项目文档/
+4. `memory/*.md` → 项目文档/
+
+### Step 7: 保存对话存档
+
+**文件**：`docs/discussion-YYYY-MM-DD{_ampm}.md`
+
+1. 检查当天是否已有讨论存档，如有则创建下午/晚间版（加 `-afternoon` 后缀）
+2. 内容模板：
+   - 主题概述
+   - 各项功能开发的关键决策和原因
+   - Bug 修复的根因和方案
+   - 技术笔记（新发现的模式、API 对比等）
+   - 修改/新增文件清单
+3. 参考格式：[docs/discussion-2026-06-19.md](docs/discussion-2026-06-19.md)
+
+### Step 8: 整理 Bug
+
+**文件**：`docs/bugs/bug-collection.md`
+
+1. 本次会话发现和修复的 bug 追加到对应区域（🟢 已修复 / 🟡 待优化）
+2. 按模板格式：发现时间、现象、根因、修复方案、相关文件
+3. 如截了图，关联 `assets/bug/` 中的截图路径
+
+### Step 9: 整理学习笔记
+
+**目录**：`notes/learnings/`
+
+1. 从本次会话提炼 1-3 个技术学习点，写入独立 `.md` 文件
+2. 格式：Obsidian YAML frontmatter + 背景 + 核心内容 + 代码模板 + 相关文件链接
+3. 主题示例：
+   - 新 API 的使用模式和踩坑（如 `HardwareKeyboard` vs `Focus.onKeyEvent`）
+   - 设计模式/架构决策（如内存优先数据流）
+   - 第三方库使用技巧
+4. 参考格式：[notes/learnings/](notes/learnings/)
 
 ## 注意事项
 
 - **不要问用户"要不要做"**——每步直接执行，做完报告结果
-- **不要半途而废**——6 步必须全部跑完，中间报错就修复后继续
+- **不要半途而废**——9 步必须全部跑完，中间报错就修复后继续
 - 对话记录不需要完整的代码 diff，只需要文件路径和修改概要
 - 如果某一步确实没有变更内容，仍然要**检查确认**后跳过，并说明"无需变更"
 - commit message 用中文写概要，让用户看得懂

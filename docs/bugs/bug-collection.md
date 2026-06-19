@@ -54,6 +54,58 @@ metadata:
   - 加快动画：`movementDuration: Duration(milliseconds: 200)`（默认 300ms）
 - **相关文件**：[lib/screens/home_screen.dart](../../codes/palm_sugar_reader/lib/screens/home_screen.dart)
 
+### 10. 书签添加后列表为空 / 关文档后丢失（2026-06-19）
+
+- **发现时间**：2026-06-19
+- **报告人**：@palmsugar
+- **现象**：添加书签后 snackbar 确认成功，但书签列表为空。关闭文档再打开书签消失。
+- **根因**：
+  1. `path.hashCode.toRadixString(36).substring(0, 12)` RangeError —— hashCode 转 base-36 后可能不足 12 位
+  2. 数据流设计错误：每次打开书签列表都从磁盘加载 → `setState` 覆盖内存
+- **修复**：
+  1. `abs().toRadixString(36).padLeft(12, '0')` 替代 `substring`
+  2. 内存优先策略：增/删先更新 `_bookmarks`，再异步写磁盘
+  3. `_bookmarksLoaded` 标记位：只在首次从磁盘读
+  4. `_saveForFile` 异常上抛，UI 层 catch 并显示红色 SnackBar
+- **相关文件**：[lib/services/bookmark_storage.dart](../../codes/palm_sugar_reader/lib/services/bookmark_storage.dart) · [lib/services/annotation_service.dart](../../codes/palm_sugar_reader/lib/services/annotation_service.dart) · [lib/screens/reader_screen.dart](../../codes/palm_sugar_reader/lib/screens/reader_screen.dart)
+- **截图**：[assets/bug/2026-06-19_bug_005.png](../../assets/bug/2026-06-19_bug_005.png)
+- **状态**：🟢 已修复
+
+### 11. EPUB 构建期 setState 崩溃（2026-06-19）
+
+- **发现时间**：2026-06-19
+- **报告人**：@palmsugar
+- **现象**：打开 EPUB 时崩溃：`setState() or markNeedsBuild() called during build`
+- **根因**：`PageView.builder` 的 `itemBuilder`（构建期）→ `_buildPage` → 章节未缓存时直接调 `_loadChapter` → `setState(() => _isLoadingContent = true)`
+- **修复**：`WidgetsBinding.instance.addPostFrameCallback` 延迟章节加载到帧末
+- **相关文件**：[lib/readers/epub_reader.dart](../../codes/palm_sugar_reader/lib/readers/epub_reader.dart)
+- **状态**：🟢 已修复
+
+### 12. PDF / MD / TXT 键盘导航失效（2026-06-19）
+
+- **发现时间**：2026-06-19
+- **报告人**：@palmsugar
+- **现象**：PDF PgUp/PgDn/Home/End 无反应；MD/TXT 完全没有键盘功能
+- **根因**：
+  1. PDF：`Focus.onKeyEvent` 被 pdfrx 内部 Focus 拦截
+  2. MD/TXT：从未实现键盘处理
+- **修复**：
+  1. 全部改用 `HardwareKeyboard.instance.addHandler()` 硬件级拦截
+  2. MD/TXT 添加 `ScrollController` + `LayoutBuilder` 视口高度计算
+  3. 新增 Space/Shift+Space 备用翻页键
+- **相关文件**：[lib/readers/pdf_reader.dart](../../codes/palm_sugar_reader/lib/readers/pdf_reader.dart) · [lib/readers/txt_reader.dart](../../codes/palm_sugar_reader/lib/readers/txt_reader.dart) · [lib/readers/markdown_reader.dart](../../codes/palm_sugar_reader/lib/readers/markdown_reader.dart)
+- **状态**：🟢 已修复
+
+### 13. EPUB 退出后再进从首页开始（2026-06-19）
+
+- **发现时间**：2026-06-19
+- **报告人**：@palmsugar
+- **现象**：EPUB 退出后再进总是从第一章开始，不恢复上次位置
+- **根因**：`_restoreProgress` 正确恢复了 `_currentChapterIndex`，但 `PageController(initialPage: 0)` 死写从首页开始
+- **修复**：`_pageController?.dispose(); _pageController = PageController(initialPage: _currentChapterIndex);`
+- **相关文件**：[lib/readers/epub_reader.dart](../../codes/palm_sugar_reader/lib/readers/epub_reader.dart)
+- **状态**：🟢 已修复
+
 ---
 
 ## 🟡 已知问题 / 待优化
