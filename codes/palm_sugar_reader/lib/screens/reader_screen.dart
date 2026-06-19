@@ -2,12 +2,14 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../converters/format_converter.dart';
 import '../models/book.dart';
+import '../models/bookmark.dart';
 import '../readers/image_reader.dart';
 import '../readers/txt_reader.dart';
 import '../readers/markdown_reader.dart';
 import '../readers/epub_reader.dart';
 import '../readers/pdf_reader.dart';
 import '../main.dart';
+import '../services/bookmark_storage.dart';
 import '../services/settings_service.dart';
 import '../theme.dart';
 import '../widgets/top_menu_bar.dart';
@@ -16,11 +18,10 @@ import 'settings_screen.dart';
 /// 阅读器路由壳 — 根据文件格式分发到对应阅读器
 ///
 /// 顶部菜单栏按钮：
-/// - 标注工具（待实现，灰色）
+/// - 标注工具
+/// - 书签（PDF/EPUB）
 /// - 格式转换（PopMenu 弹出可选目标格式）
-/// - 字号（待实现，灰色）
-/// - 背景色（待实现，灰色）
-/// - 账号（待实现，灰色）
+/// - 背景色
 /// - 设置
 class ReaderScreen extends StatefulWidget {
   final Book book;
@@ -37,6 +38,243 @@ class _ReaderScreenState extends State<ReaderScreen> {
   final GlobalKey<PdfReaderState> _pdfReaderKey = GlobalKey<PdfReaderState>();
   final GlobalKey<EpubReaderState> _epubReaderKey = GlobalKey<EpubReaderState>();
   final GlobalKey<ImageReaderState> _imageReaderKey = GlobalKey<ImageReaderState>();
+
+  // ── 书签 ──
+  List<Bookmark> _bookmarks = [];
+  bool _bookmarksLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (book.format == BookFormat.pdf || book.format == BookFormat.epub) {
+      _loadBookmarks();
+    }
+  }
+
+  Future<void> _loadBookmarks() async {
+    final list = await BookmarkStorage.loadForFile(book.filePath);
+    _bookmarksLoaded = true;
+    if (mounted) setState(() => _bookmarks = list);
+  }
+
+  bool get _isBookmarkable =>
+      book.format == BookFormat.pdf || book.format == BookFormat.epub;
+
+  // ── 当前页码（1-based）──
+  int get _currentPageNumber {
+    if (book.format == BookFormat.pdf) {
+      return _pdfReaderKey.currentState?.currentPage ?? 1;
+    } else if (book.format == BookFormat.epub) {
+      return (_epubReaderKey.currentState?.currentGlobalPage ?? 0) + 1;
+    }
+    return 1;
+  }
+
+  int get _totalPages {
+    if (book.format == BookFormat.pdf) {
+      return _pdfReaderKey.currentState?.pageCount ?? 1;
+    } else if (book.format == BookFormat.epub) {
+      return _epubReaderKey.currentState?.totalPages ?? 1;
+    }
+    return 1;
+  }
+
+  double get _position {
+    if (_totalPages <= 1) return 0.0;
+    return ((_currentPageNumber - 1) / (_totalPages - 1)).clamp(0.0, 1.0);
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // 书签操作
+  // ════════════════════════════════════════════════════════════════════════════
+
+  Future<void> _addBookmark() async {
+    String? chapterTitle;
+    int? chapterIndex;
+    if (book.format == BookFormat.epub) {
+      final epub = _epubReaderKey.currentState;
+      if (epub != null) {
+        chapterIndex = epub.currentChapterIndex;
+        chapterTitle = epub.currentChapterTitle;
+      }
+    }
+
+    final bookmark = Bookmark(
+      id: BookmarkStorage.generateId(),
+      filePath: book.filePath,
+      pageNumber: _currentPageNumber,
+      chapterIndex: chapterIndex,
+      chapterTitle: chapterTitle,
+      position: _position,
+      format: book.format,
+    );
+
+    // 先更新内存（即时 UI 反馈，不依赖磁盘）
+    _bookmarks = [..._bookmarks, bookmark];
+    _bookmarks.sort((a, b) => a.pageNumber.compareTo(b.pageNumber));
+    if (mounted) setState(() {});
+
+    // 再异步写磁盘（跨会话持久化）
+    try {
+      await BookmarkStorage.add(bookmark);
+    } catch (e) {
+      debugPrint('📑 [ReaderScreen] 书签保存失败: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('书签保存失败: $e'),
+            backgroundColor: AppTheme.error,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteBookmark(Bookmark bm) async {
+    _bookmarks.removeWhere((b) => b.id == bm.id);
+    if (mounted) setState(() {});
+    try {
+      await BookmarkStorage.remove(book.filePath, bm.id);
+    } catch (e) {
+      debugPrint('📑 [ReaderScreen] 书签删除失败: $e');
+    }
+  }
+
+  void _jumpToBookmark(Bookmark bm) {
+    Navigator.of(context).pop(); // close sheet
+    if (book.format == BookFormat.pdf) {
+      _pdfReaderKey.currentState?.jumpToPage(bm.pageNumber);
+    } else if (book.format == BookFormat.epub) {
+      // EPUB pageNumber 是 1-based，jumpToGlobalPage 是 0-based
+      _epubReaderKey.currentState?.jumpToGlobalPage(bm.pageNumber - 1);
+    }
+  }
+
+  Future<void> _showBookmarkSheet() async {
+    if (!_bookmarksLoaded) await _loadBookmarks();
+    if (!mounted) return;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return DraggableScrollableSheet(
+              initialChildSize: 0.5,
+              minChildSize: 0.3,
+              maxChildSize: 0.85,
+              expand: false,
+              builder: (ctx, scrollController) {
+                final list = _bookmarks;
+                return Column(
+                  children: [
+                    // 拖拽把手
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Container(
+                        width: 40, height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    // 标题栏
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.bookmark, color: AppTheme.primaryDark, size: 22),
+                          const SizedBox(width: 8),
+                          Text(
+                            '书签 (${list.length})',
+                            style: const TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const Spacer(),
+                          FilledButton.icon(
+                            onPressed: () async {
+                              await _addBookmark();
+                              if (ctx.mounted && mounted) {
+                                Navigator.of(ctx).pop();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('已添加书签：第 $_currentPageNumber 页'),
+                                    backgroundColor: AppTheme.primaryDark,
+                                    duration: const Duration(seconds: 2),
+                                  ),
+                                );
+                              }
+                            },
+                            icon: const Icon(Icons.add, size: 18),
+                            label: const Text('添加当前页'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppTheme.primaryDark,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              textStyle: const TextStyle(fontSize: 13),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    // 列表
+                    Expanded(
+                      child: list.isEmpty
+                          ? Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.bookmark_border, size: 48,
+                                      color: Colors.grey[400]),
+                                  const SizedBox(height: 12),
+                                  Text('暂无书签',
+                                      style: TextStyle(color: Colors.grey[500])),
+                                  const SizedBox(height: 4),
+                                  Text('点击上方按钮添加当前页',
+                                      style: TextStyle(fontSize: 12, color: Colors.grey[400])),
+                                ],
+                              ),
+                            )
+                          : ListView.separated(
+                              controller: scrollController,
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              itemCount: list.length,
+                              separatorBuilder: (context, index) =>
+                                  const Divider(height: 1, indent: 72),
+                              itemBuilder: (ctx, i) {
+                                final bm = list[i];
+                                return _BookmarkTile(
+                                  bookmark: bm,
+                                  onTap: () => _jumpToBookmark(bm),
+                                  onDelete: () async {
+                                    await _deleteBookmark(bm);
+                                    setSheetState(() {});
+                                  },
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // 原有方法
+  // ════════════════════════════════════════════════════════════════════════════
 
   void _cycleTheme() {
     final notifier = SettingsProvider.of(context);
@@ -255,8 +493,15 @@ class _ReaderScreenState extends State<ReaderScreen> {
           tooltip: '标注工具',
           icon: Icons.edit,
           enabled: book.format == BookFormat.pdf ||
-              book.format == BookFormat.epub,
+              book.format == BookFormat.epub ||
+              book.format == BookFormat.image,
           onPressed: _showAnnotHelp,
+        ),
+        TopMenuButton(
+          tooltip: '书签',
+          icon: Icons.bookmark,
+          enabled: _isBookmarkable,
+          onPressed: _showBookmarkSheet,
         ),
         TopMenuButton(
           tooltip: '格式转换',
@@ -290,6 +535,70 @@ class _ReaderScreenState extends State<ReaderScreen> {
           title: Text(book.title),
         ),
         body: _buildReader(),
+      ),
+    );
+  }
+}
+
+// ── 书签列表项 ──
+
+class _BookmarkTile extends StatelessWidget {
+  final Bookmark bookmark;
+  final VoidCallback onTap;
+  final VoidCallback onDelete;
+
+  const _BookmarkTile({
+    required this.bookmark,
+    required this.onTap,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final timeStr =
+        '${bookmark.createdAt.year}-${bookmark.createdAt.month.toString().padLeft(2, '0')}-${bookmark.createdAt.day.toString().padLeft(2, '0')} '
+        '${bookmark.createdAt.hour.toString().padLeft(2, '0')}:${bookmark.createdAt.minute.toString().padLeft(2, '0')}';
+
+    return Dismissible(
+      key: Key(bookmark.id),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        color: Colors.red[400],
+        child: const Icon(Icons.delete, color: Colors.white),
+      ),
+      confirmDismiss: (_) async {
+        onDelete();
+        return false; // 我们自己处理删除，不让 Dismissible 自动移除
+      },
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: AppTheme.primaryLight.withAlpha(80),
+          child: Text(
+            '${bookmark.pageNumber}',
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              color: AppTheme.primaryDark,
+              fontSize: 14,
+            ),
+          ),
+        ),
+        title: Text(
+          bookmark.displayTitle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 14),
+        ),
+        subtitle: Text(
+          timeStr,
+          style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+        ),
+        trailing: IconButton(
+          icon: Icon(Icons.delete_outline, size: 18, color: Colors.grey[400]),
+          onPressed: onDelete,
+        ),
+        onTap: onTap,
       ),
     );
   }

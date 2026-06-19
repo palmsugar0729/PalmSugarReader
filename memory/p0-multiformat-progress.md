@@ -5,7 +5,7 @@ metadata:
   type: project
 ---
 
-## 进度概览（截至 2026-06-18）
+## 进度概览（截至 2026-06-19）
 
 ### 已完成 ✅
 
@@ -30,6 +30,11 @@ metadata:
 19. **键盘导航**：PDF ↑↓翻页、EPUB ←→翻页、TXT/MD 原生滚动
 20. **批注（浮动便签）**：点击放置可拖动便签，点击查看/编辑文字，N 标记+文字预览
 21. **标注联动删除**：书架删文件→自动清理标注 JSON
+22. **手动书签**：添加/列表/跳转/滑动删除，per-file JSON 持久化，仅 PDF/EPUB
+23. **EPUB 进度恢复**：退出后再进自动回到上次阅读章节
+24. **键盘增强**：全格式 Space/Shift+Space 翻页，MD/TXT ↑↓ 行滚动
+25. **格式转换扩展**：MD→EPUB（EPUB 3 标准）、MD→TXT（纯文本提取）、图片→PDF（单图/多图）
+26. **外部文件拖拽**：`desktop_drop` 包，拖入直接打开
 
 ### 2.0 路线图（讨论完毕，待开发）
 
@@ -45,9 +50,9 @@ metadata:
 
 ### 当前代码状态
 
-- `flutter analyze` 零错误 ✅
+- `flutter analyze` 零错误（仅预存 lint info） ✅
 - `flutter build windows --release` 通过 ✅
-- Release 体积：62MB（含 Noto Sans SC VF 17MB → 待精简）
+- Release 体积：~52MB（Noto Sans SC Regular ~10MB）
 - 已移除依赖：`epub_view`（替换为自研翻页阅读器）
 
 ### 新增文件（2026-06-13）

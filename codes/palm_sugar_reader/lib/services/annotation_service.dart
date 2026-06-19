@@ -17,7 +17,7 @@ class AnnotationService {
   static bool enabled = true;
 
   static String _hashPath(String path) {
-    return path.hashCode.toRadixString(36).substring(0, 12);
+    return path.hashCode.abs().toRadixString(36).padLeft(12, '0');
   }
 
   static Future<File> _annotationFile(String filePath) async {

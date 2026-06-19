@@ -1,6 +1,6 @@
 # PalmSugarReader 产品需求文档（PRD）
 
-> 版本：v0.4 MVP | 更新：2026-06-18
+> 版本：v0.5 MVP | 更新：2026-06-19
 
 ---
 
@@ -38,11 +38,12 @@ PalmSugarReader 是一款**轻量化、跨平台**的综合阅读浏览器。不
 | P2 | DOCX | Word 文档阅读（以后加） |
 | P2 | DOC | 旧版 Word 格式（以后加） |
 
-### 4.2 书签
+### 4.2 书签 ✅（已实现）
 
-- 记录阅读位置（文件 + 页码/进度）
-- 书签列表管理（增删改查）
-- 支持跨会话持久化
+- 记录阅读位置（文件 + 页码 + 章节信息）
+- 书签列表底部弹窗管理（增删 + 点击跳转 + 滑动删除）
+- 支持跨会话持久化（per-file JSON，与标注同模式）
+- 仅 PDF / EPUB 支持（`book.isBookmarkable`）
 
 ### 4.3 标注功能 ✅（已实现）
 
@@ -55,17 +56,17 @@ PalmSugarReader 是一款**轻量化、跨平台**的综合阅读浏览器。不
 - **设计原则**：不修改原文内容，保护版权
 - **Bug 修复 ✅**：2026-06-19 修复缩放后平移丢失 + 焦点偏移问题（`InteractiveViewer` 矩阵计算 + `AnnotationLayer` 事件拦截）
 
-### 4.3.1 字体策略（待做）
+### 4.3.1 字体策略 ✅（已实现）
 
 采用「系统字体优先 + 按需加载」方案：
 
-1. 优先使用 PDF 文档内嵌字体
-2. 查找系统已安装字体（Windows: Microsoft YaHei / SimSun / SimHei 等）
-3. 系统通用中日 fallback 字体
-4. 以上全部缺失 → 加载内置精简单字重字体（NotoSansSC-Regular，约 5-6MB）
-5. 设置页支持用户手动导入额外字体作为 fallback
+1. PDF：`pdfrx` 自动使用文档内嵌字体
+2. EPUB/MD/TXT：Flutter 默认调用系统 CJK 字体（Windows: Microsoft YaHei / SimHei / SimSun，iOS/macOS: PingFang，Android: Noto Sans CJK）
+3. MD→PDF 转换：完整字体优先级链（用户导入 → 系统字体 → 内置 NotoSansSC-Regular）
+4. 设置页支持用户手动导入额外字体作为 fallback（已用于 MD→PDF 转换）
+5. 内置 Noto Sans SC Regular（~10MB）已替换原 VF（17MB），作为最后兜底
 
-当前内置 Noto Sans SC VF（17MB）→ 待替换为单字重 Regular（5-6MB）
+> 字体链仅渗透到 MD→PDF 转换器，屏幕阅读器依赖系统字体。对中日文目标用户群，系统字体已覆盖所有场景，MVP 阶段不再深入。
 
 ### 4.4 格式转换
 

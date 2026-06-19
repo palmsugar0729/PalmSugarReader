@@ -15,17 +15,18 @@ PalmSugarReader 是一个支持多种文档格式的跨平台阅读器，覆盖 
 
 | 功能 | 说明 |
 |------|------|
-| PDF 阅读 | `pdfrx`，缩放(+/-/Ctrl+滚轮/滑条)、文字选择、标注图层、键盘 ↑↓PgUp/PgDn/Home/End |
-| EPUB 阅读 | 自研翻页阅读器（`epubx` + `PageView`），懒加载秒开，←→/Home/End 翻页 |
-| TXT 阅读 | 多编码自动检测 + 全局字号联动 |
-| Markdown 阅读 | LaTeX 数学公式 + 全局字号联动 |
+| PDF 阅读 | `pdfrx`，缩放(+/-/Ctrl+滚轮/滑条)、标注图层、键盘 ↑↓/PgUp/PgDn/Home/End/Space/Shift+Space |
+| EPUB 阅读 | 自研翻页阅读器（`epubx` + `PageView`），懒加载秒开，←→/Home/End/Space 翻页，退出进度恢复 |
+| TXT 阅读 | 多编码自动检测 + 全局字号联动 + 键盘 ↑↓/PgUp/PgDn/Home/End/Space |
+| Markdown 阅读 | LaTeX 数学公式 + 全局字号联动 + 键盘 ↑↓/PgUp/PgDn/Home/End/Space |
 | 图片阅读 | `InteractiveViewer` 缩放/平移 + 标注图层 + 键盘 +/-/0 |
 | 标注系统 | 统一 `AnnotationLayer`：高亮/划线（拖拽画）+ 批注便签（点击放置、拖动、编辑） |
+| 书签管理 | 手动书签（添加/列表/跳转/删除），per-file JSON 持久化，支持 PDF/EPUB |
 | 格式转换 | TXT ↔ MD、EPUB → MD、MD → PDF、MD → EPUB、MD → TXT、图片 → PDF |
 | 主题系统 | Material3 `#A3C1AD` + 暗色主题 + 跟随系统 |
-| 设置页面 | 批量导入、字号三档(14/18/24)、背景色、字体导入、帮助 |
-| 顶部菜单栏 | 鼠标悬停展开，标注/转换/字号/背景/账号/设置 |
-| 书签持久化 | JSON 进度记忆 + 重启恢复 |
+| 设置页面 | 批量导入、字号三档(14/18/24)、背景色、字体导入、帮助、清除历史 |
+| 顶部菜单栏 | 鼠标悬停展开，标注/书签/转换/背景色/设置 |
+| 最近文件 | JSON 进度记忆 + 重启恢复 |
 | 批量导入 | 同目录同扩展名+词干匹配 |
 | 文件拖拽 | 从系统拖入文件直接打开（支持格式）或警告（不支持格式） |
 

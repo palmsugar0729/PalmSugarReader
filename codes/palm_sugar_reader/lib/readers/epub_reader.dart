@@ -115,6 +115,33 @@ class EpubReaderState extends State<EpubReader> {
     super.dispose();
   }
 
+  // ── 书签 API ──
+  int get currentGlobalPage => _currentGlobalPage;
+  int get totalPages => _totalPages;
+  int get currentChapterIndex => _currentChapterIndex;
+  String get currentChapterTitle =>
+      _currentChapterIndex < _flatChapters.length
+          ? _flatChapters[_currentChapterIndex].title
+          : '';
+
+  /// 解析某个 global page 对应的章节标题（用于书签列表展示）
+  String chapterTitleForPage(int globalPage) {
+    final (chIdx, _) = _resolveGlobalPage(globalPage);
+    if (chIdx >= 0 && chIdx < _flatChapters.length) {
+      return _flatChapters[chIdx].title;
+    }
+    return '';
+  }
+
+  void jumpToGlobalPage(int page) {
+    final clamped = page.clamp(0, (_totalPages - 1).clamp(0, 999999));
+    _pageController?.animateToPage(
+      clamped,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
+  }
+
   // ════════════════════════════════════════════════════════════════════════════
   // 第一步：快速加载元数据 + TOC
   // ════════════════════════════════════════════════════════════════════════════
@@ -134,8 +161,9 @@ class EpubReaderState extends State<EpubReader> {
       // 恢复上次阅读位置
       await _restoreProgress();
 
-      // 如果还没有 pageController（没有历史进度），创建一个
-      _pageController ??= PageController(initialPage: 0);
+      // 创建 PageController，起始页为恢复的章节位置
+      _pageController?.dispose();
+      _pageController = PageController(initialPage: _currentChapterIndex);
       _totalPages = _flatChapters.length; // 初始估算：每章 1 页
 
       if (mounted) {
@@ -374,9 +402,11 @@ class EpubReaderState extends State<EpubReader> {
     // 查找 globalPage 对应的章节和页内偏移
     final (chapterIndex, pageInChapter) = _resolveGlobalPage(globalPage);
 
-    // 未加载的章节：触发加载，显示 loading
+    // 未加载的章节：延迟到帧末触发加载，避免构建期 setState
     if (!_pageCache.containsKey(chapterIndex)) {
-      _loadChapter(chapterIndex);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadChapter(chapterIndex);
+      });
       return const Center(child: CircularProgressIndicator());
     }
 

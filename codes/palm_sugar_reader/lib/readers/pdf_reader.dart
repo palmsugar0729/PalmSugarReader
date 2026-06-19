@@ -34,12 +34,22 @@ class PdfReaderState extends State<PdfReader> {
       final z = _ctrl.currentZoom;
       if (z != _zoom) setState(() => _zoom = z);
     });
+    HardwareKeyboard.instance.addHandler(_handleKey);
   }
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleKey);
     _focusNode.dispose();
     super.dispose();
+  }
+
+  // ── 书签 API ──
+  int get currentPage => _currentPage;
+  int get pageCount => _pageCount;
+
+  void jumpToPage(int page) {
+    _ctrl.goToPage(pageNumber: page.clamp(1, _pageCount));
   }
 
   void _zoomIn() => _ctrl.zoomUp(duration: const Duration(milliseconds: 150));
@@ -57,26 +67,31 @@ class PdfReaderState extends State<PdfReader> {
     }
   }
 
-  KeyEventResult _handleKey(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+  bool _handleKey(KeyEvent event) {
+    if (event is! KeyDownEvent) return false;
     final key = event.logicalKey;
-    if (key == LogicalKeyboardKey.arrowUp || key == LogicalKeyboardKey.pageUp) {
+    // PgUp / ↑ / Shift+Space → 上一页
+    if (key == LogicalKeyboardKey.arrowUp || key == LogicalKeyboardKey.pageUp ||
+        (key == LogicalKeyboardKey.space &&
+         (HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.shiftLeft) ||
+          HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.shiftRight)))) {
       _ctrl.goToPage(pageNumber: (_currentPage - (key == LogicalKeyboardKey.pageUp ? 10 : 1)).clamp(1, _pageCount));
-      return KeyEventResult.handled;
+      return true;
     }
-    if (key == LogicalKeyboardKey.arrowDown || key == LogicalKeyboardKey.pageDown) {
+    // PgDn / ↓ / Space → 下一页
+    if (key == LogicalKeyboardKey.arrowDown || key == LogicalKeyboardKey.pageDown || key == LogicalKeyboardKey.space) {
       _ctrl.goToPage(pageNumber: (_currentPage + (key == LogicalKeyboardKey.pageDown ? 10 : 1)).clamp(1, _pageCount));
-      return KeyEventResult.handled;
+      return true;
     }
     if (key == LogicalKeyboardKey.home) {
       _ctrl.goToPage(pageNumber: 1);
-      return KeyEventResult.handled;
+      return true;
     }
     if (key == LogicalKeyboardKey.end) {
       _ctrl.goToPage(pageNumber: _pageCount);
-      return KeyEventResult.handled;
+      return true;
     }
-    return KeyEventResult.ignored;
+    return false;
   }
 
   void enterAnnotationMode() async {
@@ -137,7 +152,6 @@ class PdfReaderState extends State<PdfReader> {
     return Focus(
       focusNode: _focusNode,
       autofocus: true,
-      onKeyEvent: _handleKey,
       child: Stack(
         children: [
           // PDF 视图
