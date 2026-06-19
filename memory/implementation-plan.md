@@ -26,3 +26,8 @@ metadata:
 - Phase 4 ✅ 完成 (2026-06-18) — 标注系统（统一图层+自由拖拽+批注便签+粗细+键盘）
 - Phase 5 待开始 — 格式转换（MD→TXT + 圖片→PDF + MD→EPUB）
 - Phase 6 延后 — 用户系统本地 mock + 语言入口
+
+## 代码已推送 (2026-06-18)
+
+- Commit `9a5b383`: Phase 2-4 全部改动（33 files, +3949/-465）
+- 用户手动 push 到 `origin/main`

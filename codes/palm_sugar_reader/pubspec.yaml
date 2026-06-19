@@ -48,6 +48,8 @@ dependencies:
   markdown: ^7.3.1
   pdf: ^3.8.4
   html: ^0.15.5
+  archive: ^3.4.0
+  desktop_drop: ^0.5.0
 
 dev_dependencies:
   flutter_test:

@@ -148,7 +148,8 @@ class PdfReaderState extends State<PdfReader> {
               controller: _ctrl,
               params: PdfViewerParams(
                 backgroundColor: const Color(0xFFE0E0E0),
-                enableTextSelection: true,
+                enableTextSelection: false,
+                boundaryMargin: const EdgeInsets.all(double.infinity),
                 pageOverlaysBuilder: _pageOverlaysBuilder,
                 margin: 8,
                 onPageChanged: (p) => setState(() => _currentPage = p ?? _currentPage),

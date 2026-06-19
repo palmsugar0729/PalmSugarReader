@@ -194,14 +194,17 @@ class _ReaderScreenState extends State<ReaderScreen> {
             label: '打开',
             textColor: Colors.white,
             onPressed: () {
-              final convertedBook = Book.fromFile(result.outputPath!);
-              if (convertedBook.isReadable) {
-                Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(
-                    builder: (_) => ReaderScreen(book: convertedBook),
-                  ),
-                );
-              }
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                final convertedBook = Book.fromFile(result.outputPath!);
+                if (convertedBook.isReadable) {
+                  Navigator.of(context).pushReplacement(
+                    MaterialPageRoute(
+                      builder: (_) => ReaderScreen(book: convertedBook),
+                    ),
+                  );
+                }
+              });
             },
           ),
         ),

@@ -232,6 +232,7 @@ class _AnnotationLayerState extends State<AnnotationLayer> {
 
   @override
   Widget build(BuildContext context) {
+    if (!widget.enabled) return widget.child;
     return LayoutBuilder(
       builder: (context, constraints) {
         _pageSize = Size(constraints.maxWidth, constraints.maxHeight);

@@ -30,15 +30,33 @@ class ImageReaderState extends State<ImageReader> {
     super.dispose();
   }
 
-  void _zoomIn() {
-    _currentScale = (_currentScale + 0.5).clamp(0.5, 5.0);
-    _tc.value = Matrix4.diagonal3Values(_currentScale, _currentScale, 1.0);
+  /// 以视口中心为焦点进行缩放，保留已有平移。
+  void _applyZoom(double targetScale) {
+    final clamped = targetScale.clamp(0.5, 5.0);
+    final matrix = _tc.value.clone();
+    final currentScale = matrix.getMaxScaleOnAxis();
+    if (currentScale == 0) {
+      _tc.value = Matrix4.identity();
+      _currentScale = 1.0;
+      return;
+    }
+    final scaleDelta = clamped / currentScale;
+
+    final renderBox = context.findRenderObject() as RenderBox?;
+    final size = renderBox?.size ?? Size.zero;
+    final center = Offset(size.width / 2, size.height / 2);
+
+    // 以视口中心为焦点缩放:
+    // 新矩阵 = T(center) · S(scaleDelta) · T(-center) · 旧矩阵
+    final toCenter = Matrix4.translationValues(center.dx, center.dy, 0);
+    final scaleM = Matrix4.diagonal3Values(scaleDelta, scaleDelta, 1.0);
+    final back = Matrix4.translationValues(-center.dx, -center.dy, 0);
+    _tc.value = toCenter * scaleM * back * matrix;
+    _currentScale = clamped;
   }
 
-  void _zoomOut() {
-    _currentScale = (_currentScale - 0.5).clamp(0.5, 5.0);
-    _tc.value = Matrix4.diagonal3Values(_currentScale, _currentScale, 1.0);
-  }
+  void _zoomIn() => _applyZoom(_tc.value.getMaxScaleOnAxis() + 0.5);
+  void _zoomOut() => _applyZoom(_tc.value.getMaxScaleOnAxis() - 0.5);
 
   void _resetZoom() {
     _currentScale = 1.0;
@@ -46,11 +64,10 @@ class ImageReaderState extends State<ImageReader> {
   }
 
   void _toggleZoom() {
-    if (_currentScale > 1.0) {
+    if (_tc.value.getMaxScaleOnAxis() > 1.0) {
       _resetZoom();
     } else {
-      _currentScale = 2.0;
-      _tc.value = Matrix4.diagonal3Values(2.0, 2.0, 1.0);
+      _applyZoom(2.0);
     }
   }
 
@@ -126,23 +143,24 @@ class ImageReaderState extends State<ImageReader> {
             opacity: _opacity,
             thickness: _thickness,
             onClose: _exit,
-            child: GestureDetector(
-              onDoubleTap: _toggleZoom,
-              child: InteractiveViewer(
-                transformationController: _tc,
-                panEnabled: !_annotMode,
-                scaleEnabled: !_annotMode,
-                minScale: 0.5,
-                maxScale: 5.0,
-                onInteractionEnd: (details) {
-                  final matrix = _tc.value;
-                  _currentScale = matrix.getMaxScaleOnAxis();
-                },
+            child: InteractiveViewer(
+              transformationController: _tc,
+              panEnabled: !_annotMode,
+              scaleEnabled: !_annotMode,
+              boundaryMargin: const EdgeInsets.all(double.infinity),
+              minScale: 0.5,
+              maxScale: 5.0,
+              onInteractionEnd: (details) {
+                final matrix = _tc.value;
+                _currentScale = matrix.getMaxScaleOnAxis();
+              },
+              child: GestureDetector(
+                onDoubleTap: _toggleZoom,
                 child: Center(
                   child: Image.file(
                     File(widget.filePath),
                     fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => const Column(
+                    errorBuilder: (_, _, _) => const Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Icon(Icons.broken_image, size: 64, color: Colors.grey),

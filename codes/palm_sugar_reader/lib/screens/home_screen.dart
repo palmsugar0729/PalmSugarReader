@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:desktop_drop/desktop_drop.dart';
 import '../models/book.dart';
 import '../services/annotation_service.dart';
 import '../services/bookmark_service.dart';
@@ -9,6 +10,8 @@ import '../theme.dart';
 import '../utils/file_utils.dart';
 import '../main.dart';
 import '../services/settings_service.dart';
+import '../converters/image_pdf_converter.dart';
+import '../converters/format_converter.dart';
 import '../widgets/top_menu_bar.dart';
 import 'reader_screen.dart';
 import 'settings_screen.dart';
@@ -55,7 +58,7 @@ class _HomeScreenState extends State<HomeScreen> {
         if (settings.batchImport) {
           await _checkSiblingFiles(path);
         }
-        _addAndOpenBook(book);
+        await _addAndOpenBook(book);
       } else {
         _showUnsupportedDialog(book.title);
       }
@@ -135,17 +138,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (confirmed == true && mounted) {
         int imported = 0;
+        final saveFutures = <Future<void>>[];
         for (final siblingPath in siblings) {
           final siblingBook = Book.fromFile(siblingPath);
           if (siblingBook.isReadable) {
             _recentBooks.removeWhere((b) => b.filePath == siblingBook.filePath);
             _recentBooks.insert(0, siblingBook);
-            if (siblingBook.isBookmarkable) {
-              BookmarkService.addOrUpdate(siblingBook);
-            }
+            saveFutures.add(BookmarkService.addOrUpdate(siblingBook));
             imported++;
           }
         }
+        await Future.wait(saveFutures);
         if (imported > 0 && mounted) {
           setState(() {});
           ScaffoldMessenger.of(context).showSnackBar(
@@ -159,14 +162,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// 将书籍添加到列表并打开
-  void _addAndOpenBook(Book book) {
+  Future<void> _addAndOpenBook(Book book) async {
     setState(() {
       _recentBooks.removeWhere((b) => b.filePath == book.filePath);
       _recentBooks.insert(0, book);
     });
-    if (book.isBookmarkable) {
-      BookmarkService.addOrUpdate(book);
-    }
+    await BookmarkService.addOrUpdate(book);
     _openBook(book);
   }
 
@@ -259,9 +260,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ..sort((a, b) => b.compareTo(a));
                 for (final i in sorted) {
                   final book = _recentBooks[i];
-                  if (book.isBookmarkable) {
-                    BookmarkService.remove(book.filePath);
-                  }
+                  BookmarkService.remove(book.filePath);
                   AnnotationService.clearForFile(book.filePath);
                   _recentBooks.removeAt(i);
                 }
@@ -277,11 +276,111 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// 将选中的图片批量转为 PDF
+  Future<void> _convertSelectedToPdf() async {
+    if (_selectedIndices.isEmpty) return;
+
+    final selectedBooks = _selectedIndices.map((i) => _recentBooks[i]).toList();
+    final imageBooks = selectedBooks.where((b) => b.format == BookFormat.image).toList();
+
+    if (imageBooks.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先选择图片文件')),
+      );
+      return;
+    }
+
+    // 选择排版模式
+    final mode = await showDialog<ImagePdfMode>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('PDF 排版模式'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.view_agenda),
+              title: const Text('一图一页'),
+              subtitle: const Text('每张图片单独一页'),
+              onTap: () => Navigator.pop(ctx, ImagePdfMode.onePerPage),
+            ),
+            ListTile(
+              leading: const Icon(Icons.grid_view),
+              title: const Text('紧凑排列'),
+              subtitle: const Text('每页 2×2 网格排列'),
+              onTap: () => Navigator.pop(ctx, ImagePdfMode.compact),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (mode == null || !mounted) return;
+
+    // 选择输出路径
+    final outputPath = await FilePicker.platform.saveFile(
+      dialogTitle: '保存 PDF 文件',
+      fileName: 'merged.pdf',
+      type: FileType.custom,
+      allowedExtensions: ['pdf'],
+    );
+
+    if (outputPath == null || !mounted) return;
+
+    // 显示加载
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    // 执行转换
+    final result = await ImagePdfConverter.convertMultiple(
+      imageBooks.map((b) => b.filePath).toList(),
+      outputPath,
+      mode: mode,
+    );
+
+    // 关闭加载
+    if (!mounted) return;
+    Navigator.of(context).pop();
+
+    if (!mounted) return;
+    if (result.success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('PDF 转换成功'),
+          duration: const Duration(seconds: 5),
+          action: SnackBarAction(
+            label: '打开',
+            onPressed: () {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                final book = Book.fromFile(result.outputPath!);
+                if (book.isReadable) {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => ReaderScreen(book: book)),
+                  );
+                }
+              });
+            },
+          ),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.errorMessage ?? '转换失败')),
+      );
+    }
+
+    _exitSelectionMode();
+  }
+
   void _removeSingle(int index) {
     final book = _recentBooks[index];
-    if (book.isBookmarkable) {
-      BookmarkService.remove(book.filePath);
-    }
+    BookmarkService.remove(book.filePath);
     AnnotationService.clearForFile(book.filePath);
     setState(() => _recentBooks.removeAt(index));
   }
@@ -420,9 +519,7 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () {
               final idx = _recentBooks.indexWhere((b) => b.id == book.id);
               if (idx >= 0) {
-                if (book.isBookmarkable) {
-                  BookmarkService.remove(book.filePath);
-                }
+                BookmarkService.remove(book.filePath);
                 AnnotationService.clearForFile(book.filePath);
                 setState(() => _recentBooks.removeAt(idx));
               }
@@ -455,6 +552,25 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// 处理外部文件拖入
+  Future<void> _handleDrop(DropDoneDetails detail) async {
+    if (detail.files.isEmpty) return;
+
+    for (final file in detail.files) {
+      final path = file.path;
+
+      final book = Book.fromFile(path);
+      if (book.isReadable) {
+        await _addAndOpenBook(book);
+        return;
+      }
+    }
+
+    if (mounted) {
+      _showUnsupportedDialog('拖入的文件');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return TopMenuOverlay(
@@ -483,7 +599,10 @@ class _HomeScreenState extends State<HomeScreen> {
       ],
       child: Scaffold(
         appBar: _isSelectionMode ? _buildSelectionAppBar() : _buildNormalAppBar(),
-        body: _recentBooks.isEmpty ? _buildEmptyState() : _buildBookList(),
+        body: DropTarget(
+          onDragDone: (detail) => _handleDrop(detail),
+          child: _recentBooks.isEmpty ? _buildEmptyState() : _buildBookList(),
+        ),
         floatingActionButton: _isSelectionMode
             ? null
             : FloatingActionButton.extended(
@@ -542,6 +661,18 @@ class _HomeScreenState extends State<HomeScreen> {
                 label: const Text('删除'),
                 style: FilledButton.styleFrom(
                   backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: _selectedIndices.isEmpty ? null : _convertSelectedToPdf,
+                icon: const Icon(Icons.picture_as_pdf),
+                label: const Text('转PDF'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppTheme.primaryDark,
                   foregroundColor: Colors.white,
                 ),
               ),

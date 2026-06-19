@@ -2,6 +2,8 @@ import '../models/book.dart';
 import 'txt_md_converter.dart';
 import 'epub_md_converter.dart';
 import 'md_pdf_converter.dart';
+import 'image_pdf_converter.dart';
+import 'md_epub_converter.dart';
 
 /// 转换结果
 class ConvertResult {
@@ -38,8 +40,9 @@ class FormatConverter {
   static List<BookFormat> getAvailableTargets(BookFormat source) {
     return switch (source) {
       BookFormat.txt => [BookFormat.markdown],
-      BookFormat.markdown => [BookFormat.txt, BookFormat.pdf],
+      BookFormat.markdown => [BookFormat.txt, BookFormat.pdf, BookFormat.epub],
       BookFormat.epub => [BookFormat.markdown],
+      BookFormat.image => [BookFormat.pdf],
       _ => [],
     };
   }
@@ -50,6 +53,7 @@ class FormatConverter {
       BookFormat.markdown => 'md',
       BookFormat.txt => 'txt',
       BookFormat.pdf => 'pdf',
+      BookFormat.epub => 'epub',
       _ => '',
     };
   }
@@ -116,6 +120,16 @@ class FormatConverter {
     // MD → PDF
     if (source == BookFormat.markdown && target == BookFormat.pdf) {
       return MdPdfConverter.convert(sourcePath, outPath);
+    }
+
+    // MD → EPUB
+    if (source == BookFormat.markdown && target == BookFormat.epub) {
+      return MdEpubConverter.convert(sourcePath, outPath);
+    }
+
+    // 图片 → PDF（单图）
+    if (source == BookFormat.image && target == BookFormat.pdf) {
+      return ImagePdfConverter.convertSingle(sourcePath, outPath);
     }
 
     return null; // 无直接转换，尝试链式
