@@ -22,6 +22,7 @@ class ImageReaderState extends State<ImageReader> {
   Color _color = const Color(0xFFFFEB3B);
   double _opacity = 0.4;
   double _thickness = 8;
+  int _brushType = 0;
 
   @override
   void dispose() {
@@ -97,22 +98,30 @@ class ImageReaderState extends State<ImageReader> {
         title: const Text('选择标注类型'),
         children: [
           SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx, AnnotationType.highlight),
-            child: const ListTile(leading: Icon(Icons.format_paint, color: Color(0xFFFFEB3B)), title: Text('高亮')),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx, AnnotationType.underline),
-            child: const ListTile(leading: Icon(Icons.format_underlined, color: Color(0xFF2196F3)), title: Text('划线')),
+            onPressed: () => Navigator.pop(ctx, AnnotationType.freeform),
+            child: const ListTile(leading: Icon(Icons.brush, color: Color(0xFFFF9800)), title: Text('自由画笔')),
           ),
           SimpleDialogOption(
             onPressed: () => Navigator.pop(ctx, AnnotationType.note),
             child: const ListTile(leading: Icon(Icons.notes, color: Color(0xFF4CAF50)), title: Text('批注')),
           ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, AnnotationType.highlight),
+            child: const ListTile(leading: Icon(Icons.format_paint, color: Color(0xFFFFEB3B)), title: Text('高亮（桌面）')),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, AnnotationType.underline),
+            child: const ListTile(leading: Icon(Icons.format_underlined, color: Color(0xFF2196F3)), title: Text('划线（桌面）')),
+          ),
         ],
       ),
     );
     if (type == null || !mounted) return;
-    final style = await AnnotationColorPicker.show(context);
+    final isFreeform = type == AnnotationType.freeform;
+    final style = await AnnotationColorPicker.show(
+      context,
+      showBrushPicker: isFreeform,
+    );
     if (style == null || !mounted) return;
     setState(() {
       _annotMode = true;
@@ -120,6 +129,7 @@ class ImageReaderState extends State<ImageReader> {
       _color = style.color;
       _opacity = style.opacity;
       _thickness = style.thickness;
+      if (isFreeform) _brushType = style.brushType;
     });
   }
 
@@ -142,6 +152,7 @@ class ImageReaderState extends State<ImageReader> {
             color: _color,
             opacity: _opacity,
             thickness: _thickness,
+            brushType: _brushType,
             onClose: _exit,
             child: InteractiveViewer(
               transformationController: _tc,
@@ -199,6 +210,16 @@ class ImageReaderState extends State<ImageReader> {
   }
 
   Widget _buildIndicator() {
+    String label;
+    if (_tool == AnnotationType.freeform) {
+      label = ['铅笔', '画笔', '水彩笔'][_brushType.clamp(0, 2)];
+    } else if (_tool == AnnotationType.highlight) {
+      label = '高亮';
+    } else if (_tool == AnnotationType.underline) {
+      label = '划线';
+    } else {
+      label = '批注';
+    }
     return SafeArea(
       child: Container(
         padding: const EdgeInsets.all(12),
@@ -208,7 +229,7 @@ class ImageReaderState extends State<ImageReader> {
             decoration: BoxDecoration(color: _color.withValues(alpha: _opacity),
                 borderRadius: BorderRadius.circular(3), border: Border.all(color: _color))),
           const SizedBox(width: 8),
-          Text(_tool == AnnotationType.highlight ? '高亮模式' : _tool == AnnotationType.underline ? '划线模式' : '批注模式',
+          Text(label,
               style: const TextStyle(color: Colors.white, fontSize: 13)),
           const Spacer(),
           TextButton(onPressed: _exit, child: const Text('退出', style: TextStyle(color: Colors.white))),

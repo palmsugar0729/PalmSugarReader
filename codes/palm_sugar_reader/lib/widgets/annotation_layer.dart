@@ -1,10 +1,13 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import '../models/annotation.dart';
 import '../services/annotation_service.dart';
 
 /// 标注图层 —— 盖在内容上的透明画布
 ///
-/// - 高亮/划线：拖拽画矩形，固定高度(=thickness)
+/// - 高亮/划线：拖拽画矩形（桌面端保留）
+/// - 自由画笔：手写路径，支持铅笔/画笔/水彩笔
 /// - 批注：点击放置便签，可拖动移动，点击查看编辑
 class AnnotationLayer extends StatefulWidget {
   final Widget child;
@@ -15,6 +18,7 @@ class AnnotationLayer extends StatefulWidget {
   final Color color;
   final double opacity;
   final double thickness;
+  final int brushType; // 0=pencil 1=pen 2=watercolor
   final VoidCallback? onClose;
 
   const AnnotationLayer({
@@ -27,6 +31,7 @@ class AnnotationLayer extends StatefulWidget {
     this.color = const Color(0xFFFFEB3B),
     this.opacity = 0.4,
     this.thickness = 8,
+    this.brushType = 0,
     this.onClose,
   });
 
@@ -41,6 +46,11 @@ class _AnnotationLayerState extends State<AnnotationLayer> {
   Offset? _currentPoint;
   Size _pageSize = Size.zero;
   Annotation? _dragging;
+
+  // ── 自由画笔 ──
+  final List<Offset> _currentStroke = [];
+
+  bool get _isFreeform => widget.tool == AnnotationType.freeform;
 
   @override
   void initState() {
@@ -84,25 +94,36 @@ class _AnnotationLayerState extends State<AnnotationLayer> {
     if (_pageSize.isEmpty) return;
 
     if (widget.tool == AnnotationType.note) {
-      // 便签模式：点击/拖动已有
       final hit = _hitTestNote(e.localPosition);
       if (hit != null) {
         setState(() { _dragging = hit; _startPoint = e.localPosition; });
       }
+    } else if (_isFreeform) {
+      // 自由画笔：开始新一笔
+      setState(() {
+        _drawing = true;
+        _currentStroke.clear();
+        _currentStroke.add(e.localPosition);
+      });
     } else {
+      // 高亮/划线：拖拽矩形
       setState(() { _drawing = true; _startPoint = e.localPosition; _currentPoint = e.localPosition; });
     }
   }
 
   void _onMove(PointerMoveEvent e) {
-    if (_dragging != null) return; // 拖动中
+    if (_dragging != null) return;
     if (!_drawing) return;
-    setState(() => _currentPoint = e.localPosition);
+    if (_isFreeform) {
+      setState(() => _currentStroke.add(e.localPosition));
+    } else {
+      setState(() => _currentPoint = e.localPosition);
+    }
   }
 
   void _onUp(PointerUpEvent e) async {
+    // ── 拖动便签结束 ──
     if (_dragging != null) {
-      // 结束拖动 → 更新位置
       if (_startPoint != null) {
         final dx = e.localPosition.dx - _startPoint!.dx;
         final dy = e.localPosition.dy - _startPoint!.dy;
@@ -127,7 +148,43 @@ class _AnnotationLayerState extends State<AnnotationLayer> {
       return;
     }
 
-    if (!_drawing || _startPoint == null || _currentPoint == null) return;
+    if (!_drawing) return;
+
+    // ── 自由画笔结束 → 保存 ──
+    if (_isFreeform) {
+      setState(() => _drawing = false);
+      if (_currentStroke.length < 2) {
+        _currentStroke.clear();
+        return;
+      }
+      // 归一化坐标
+      final pw = _pageSize.width;
+      final ph = _pageSize.height;
+      final pts = <double>[];
+      for (final p in _currentStroke) {
+        pts.addAll([(p.dx / pw).clamp(0.0, 1.0), (p.dy / ph).clamp(0.0, 1.0)]);
+      }
+      final ann = Annotation(
+        id: AnnotationService.generateId(),
+        filePath: widget.filePath,
+        type: AnnotationType.freeform,
+        pageIndex: widget.pageIndex,
+        x: 0, y: 0, width: 0, height: 0,
+        thickness: widget.thickness,
+        colorValue: widget.color.toARGB32(),
+        opacity: widget.opacity,
+        points: pts,
+        brushType: widget.brushType,
+      );
+      await AnnotationService.add(ann);
+      _annotations.add(ann);
+      _currentStroke.clear();
+      if (mounted) setState(() {});
+      return;
+    }
+
+    // ── 高亮/划线结束 → 保存 ──
+    if (_startPoint == null || _currentPoint == null) return;
     setState(() => _drawing = false);
 
     final raw = _makeRect(_startPoint!, _currentPoint!);
@@ -248,15 +305,7 @@ class _AnnotationLayerState extends State<AnnotationLayer> {
               children: [
                 widget.child,
                 CustomPaint(size: _pageSize, painter: _AnnPainter(annotations: _annotations, pageSize: _pageSize)),
-                if (_drawing && _startPoint != null && _currentPoint != null && widget.tool != AnnotationType.note)
-                  CustomPaint(size: _pageSize, painter: _PrevPainter(
-                    rect: Rect.fromLTWH(
-                      _startPoint!.dx < _currentPoint!.dx ? _startPoint!.dx : _currentPoint!.dx,
-                      _startPoint!.dy,
-                      (_startPoint!.dx - _currentPoint!.dx).abs(),
-                      widget.thickness,
-                    ),
-                    color: widget.color, opacity: widget.opacity, tool: widget.tool, thickness: widget.thickness)),
+                if (_drawing) _buildPreview(),
               ],
             ),
           ),
@@ -264,7 +313,44 @@ class _AnnotationLayerState extends State<AnnotationLayer> {
       },
     );
   }
+
+  Widget _buildPreview() {
+    if (_isFreeform) {
+      // 自由画笔预览
+      return CustomPaint(
+        size: _pageSize,
+        painter: _FreeformPreviewPainter(
+          points: List.from(_currentStroke),
+          color: widget.color,
+          opacity: widget.opacity,
+          thickness: widget.thickness,
+          brushType: widget.brushType,
+        ),
+      );
+    }
+    // 高亮/划线预览
+    if (_startPoint != null && _currentPoint != null) {
+      return CustomPaint(
+        size: _pageSize,
+        painter: _PrevPainter(
+          rect: Rect.fromLTWH(
+            _startPoint!.dx < _currentPoint!.dx ? _startPoint!.dx : _currentPoint!.dx,
+            _startPoint!.dy,
+            (_startPoint!.dx - _currentPoint!.dx).abs(),
+            widget.thickness,
+          ),
+          color: widget.color,
+          opacity: widget.opacity,
+          tool: widget.tool,
+          thickness: widget.thickness,
+        ),
+      );
+    }
+    return const SizedBox.shrink();
+  }
 }
+
+// ── 完整标注渲染器 ──
 
 class _AnnPainter extends CustomPainter {
   final List<Annotation> annotations;
@@ -274,42 +360,181 @@ class _AnnPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     for (final ann in annotations) {
-      final rect = ann.toPixelRect(pageSize.width, pageSize.height);
-      final paint = Paint()..color = ann.color.withValues(alpha: ann.opacity)..style = PaintingStyle.fill;
-
-      if (ann.type == AnnotationType.highlight) {
-        canvas.drawRect(rect, paint);
-      } else if (ann.type == AnnotationType.underline) {
-        canvas.drawRect(Rect.fromLTWH(rect.left, rect.bottom - 2, rect.width, 2), paint..color = ann.color);
+      if (ann.type == AnnotationType.freeform) {
+        _drawFreeform(canvas, ann);
+      } else if (ann.type == AnnotationType.highlight || ann.type == AnnotationType.underline) {
+        _drawRect(canvas, ann);
       } else if (ann.type == AnnotationType.note) {
-        // 便签标记：小色块 + 图标
-        final r = Rect.fromLTWH(rect.left, rect.top, 24, 24);
-        canvas.drawRRect(RRect.fromRectAndRadius(r, const Radius.circular(4)), paint..color = ann.color.withValues(alpha: 0.85));
-        final tp = TextPainter(
-          text: TextSpan(text: 'N', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
-          textDirection: TextDirection.ltr,
-        )..layout();
-        tp.paint(canvas, Offset(r.left + (24 - tp.width) / 2, r.top + (24 - tp.height) / 2));
-        // 显示批注文字摘要
-        if (ann.noteText != null && ann.noteText!.isNotEmpty) {
-          final preview = ann.noteText!.length > 12 ? '${ann.noteText!.substring(0, 12)}...' : ann.noteText!;
-          final np = TextPainter(
-            text: TextSpan(text: preview, style: TextStyle(color: ann.color, fontSize: 10)),
-            textDirection: TextDirection.ltr,
-          )..layout();
-          canvas.drawRRect(
-            RRect.fromRectAndRadius(Rect.fromLTWH(r.right + 4, r.top, np.width + 8, 20), const Radius.circular(4)),
-            Paint()..color = ann.color.withValues(alpha: 0.15),
-          );
-          np.paint(canvas, Offset(r.right + 8, r.top + 3));
-        }
+        _drawNote(canvas, ann);
       }
+    }
+  }
+
+  void _drawFreeform(Canvas canvas, Annotation ann) {
+    final pts = ann.points;
+    if (pts == null || pts.length < 4) return;
+    final pw = pageSize.width;
+    final ph = pageSize.height;
+
+    final path = ui.Path();
+    path.moveTo(pts[0] * pw, pts[1] * ph);
+
+    if (pts.length == 4) {
+      // 只有两个点 → 直线
+      path.lineTo(pts[2] * pw, pts[3] * ph);
+    } else {
+      // 多个点 → 贝塞尔平滑
+      for (int i = 2; i < pts.length - 2; i += 2) {
+        final x1 = pts[i] * pw;
+        final y1 = pts[i + 1] * ph;
+        final x2 = pts[i + 2] * pw;
+        final y2 = pts[i + 3] * ph;
+        final midX = (x1 + x2) / 2;
+        final midY = (y1 + y2) / 2;
+        path.quadraticBezierTo(x1, y1, midX, midY);
+      }
+      // 最后一个点
+      path.lineTo(pts[pts.length - 2] * pw, pts[pts.length - 1] * ph);
+    }
+
+    final paint = _brushPaint(ann);
+    canvas.drawPath(path, paint);
+  }
+
+  Paint _brushPaint(Annotation ann) {
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    switch (ann.brushType) {
+      case 0: // pencil
+        paint
+          ..color = ann.color.withValues(alpha: ann.opacity * 0.7)
+          ..strokeWidth = (ann.thickness * 0.4).clamp(1.5, 6);
+        break;
+      case 2: // watercolor
+        paint
+          ..color = ann.color.withValues(alpha: ann.opacity * 0.3)
+          ..strokeWidth = ann.thickness.clamp(10, 40)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
+        break;
+      default: // pen
+        paint
+          ..color = ann.color.withValues(alpha: ann.opacity)
+          ..strokeWidth = ann.thickness.clamp(3, 20);
+        break;
+    }
+    return paint;
+  }
+
+  void _drawRect(Canvas canvas, Annotation ann) {
+    final rect = ann.toPixelRect(pageSize.width, pageSize.height);
+    final paint = Paint()..color = ann.color.withValues(alpha: ann.opacity)..style = PaintingStyle.fill;
+
+    if (ann.type == AnnotationType.highlight) {
+      canvas.drawRect(rect, paint);
+    } else {
+      canvas.drawRect(Rect.fromLTWH(rect.left, rect.bottom - 2, rect.width, 2), paint..color = ann.color);
+    }
+  }
+
+  void _drawNote(Canvas canvas, Annotation ann) {
+    final rect = ann.toPixelRect(pageSize.width, pageSize.height);
+    final r = Rect.fromLTWH(rect.left, rect.top, 24, 24);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(r, const Radius.circular(4)),
+      Paint()..color = ann.color.withValues(alpha: 0.85),
+    );
+    final tp = TextPainter(
+      text: TextSpan(text: 'N', style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, Offset(r.left + (24 - tp.width) / 2, r.top + (24 - tp.height) / 2));
+    if (ann.noteText != null && ann.noteText!.isNotEmpty) {
+      final preview = ann.noteText!.length > 12 ? '${ann.noteText!.substring(0, 12)}...' : ann.noteText!;
+      final np = TextPainter(
+        text: TextSpan(text: preview, style: TextStyle(color: ann.color, fontSize: 10)),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(Rect.fromLTWH(r.right + 4, r.top, np.width + 8, 20), const Radius.circular(4)),
+        Paint()..color = ann.color.withValues(alpha: 0.15),
+      );
+      np.paint(canvas, Offset(r.right + 8, r.top + 3));
     }
   }
 
   @override
   bool shouldRepaint(covariant _AnnPainter old) => annotations != old.annotations || pageSize != old.pageSize;
 }
+
+// ── 自由画笔预览 ──
+
+class _FreeformPreviewPainter extends CustomPainter {
+  final List<Offset> points;
+  final Color color;
+  final double opacity;
+  final double thickness;
+  final int brushType;
+
+  _FreeformPreviewPainter({
+    required this.points,
+    required this.color,
+    required this.opacity,
+    required this.thickness,
+    required this.brushType,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (points.length < 2) return;
+
+    final path = ui.Path();
+    path.moveTo(points[0].dx, points[0].dy);
+
+    if (points.length == 2) {
+      path.lineTo(points[1].dx, points[1].dy);
+    } else {
+      for (int i = 1; i < points.length - 1; i++) {
+        final mid = Offset((points[i].dx + points[i + 1].dx) / 2, (points[i].dy + points[i + 1].dy) / 2);
+        path.quadraticBezierTo(points[i].dx, points[i].dy, mid.dx, mid.dy);
+      }
+      path.lineTo(points.last.dx, points.last.dy);
+    }
+
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    switch (brushType) {
+      case 0: // pencil
+        paint
+          ..color = color.withValues(alpha: opacity * 0.7)
+          ..strokeWidth = (thickness * 0.4).clamp(1.5, 6);
+        break;
+      case 2: // watercolor
+        paint
+          ..color = color.withValues(alpha: opacity * 0.3)
+          ..strokeWidth = thickness.clamp(10, 40)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
+        break;
+      default: // pen
+        paint
+          ..color = color.withValues(alpha: opacity)
+          ..strokeWidth = thickness.clamp(3, 20);
+        break;
+    }
+
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _FreeformPreviewPainter old) => points != old.points || color != old.color;
+}
+
+// ── 高亮/划线预览 ──
 
 class _PrevPainter extends CustomPainter {
   final Rect rect;

@@ -88,6 +88,7 @@ class EpubReaderState extends State<EpubReader> {
   Color _annotColor = const Color(0xFFFFEB3B);
   double _annotOpacity = 0.4;
   double _annotThickness = 8;
+  int _brushType = 0;
 
   // ── 进度持久化 ──
   Timer? _progressSaveTimer;
@@ -442,6 +443,7 @@ class EpubReaderState extends State<EpubReader> {
       color: _annotColor,
       opacity: _annotOpacity,
       thickness: _annotThickness,
+      brushType: _brushType,
       onClose: _exitAnnotMode,
       child: SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -641,23 +643,31 @@ class EpubReaderState extends State<EpubReader> {
         title: const Text('选择标注类型'),
         children: [
           SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx, AnnotationType.highlight),
-            child: const ListTile(leading: Icon(Icons.format_paint, color: Color(0xFFFFEB3B)), title: Text('高亮')),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx, AnnotationType.underline),
-            child: const ListTile(leading: Icon(Icons.format_underlined, color: Color(0xFF2196F3)), title: Text('划线')),
+            onPressed: () => Navigator.pop(ctx, AnnotationType.freeform),
+            child: const ListTile(leading: Icon(Icons.brush, color: Color(0xFFFF9800)), title: Text('自由画笔')),
           ),
           SimpleDialogOption(
             onPressed: () => Navigator.pop(ctx, AnnotationType.note),
             child: const ListTile(leading: Icon(Icons.notes, color: Color(0xFF4CAF50)), title: Text('批注')),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, AnnotationType.highlight),
+            child: const ListTile(leading: Icon(Icons.format_paint, color: Color(0xFFFFEB3B)), title: Text('高亮（桌面）')),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, AnnotationType.underline),
+            child: const ListTile(leading: Icon(Icons.format_underlined, color: Color(0xFF2196F3)), title: Text('划线（桌面）')),
           ),
         ],
       ),
     );
     if (type == null || !mounted) return;
 
-    final style = await AnnotationColorPicker.show(context);
+    final isFreeform = type == AnnotationType.freeform;
+    final style = await AnnotationColorPicker.show(
+      context,
+      showBrushPicker: isFreeform,
+    );
     if (style == null || !mounted) return;
 
     setState(() {
@@ -666,6 +676,7 @@ class EpubReaderState extends State<EpubReader> {
       _annotColor = style.color;
       _annotOpacity = style.opacity;
       _annotThickness = style.thickness;
+      if (isFreeform) _brushType = style.brushType;
     });
   }
 

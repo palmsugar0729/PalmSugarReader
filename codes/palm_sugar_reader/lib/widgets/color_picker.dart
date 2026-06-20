@@ -1,34 +1,42 @@
 import 'package:flutter/material.dart';
 import '../theme.dart';
 
-/// 标注颜色选择器 — 预置色块 + HEX + 不透明度 + 粗细
+/// 标注颜色选择器 — 预置色块 + HEX + 不透明度 + 粗细 + 画笔类型
 ///
-/// 返回 (color, opacity, thickness)，取消返回 null
+/// 返回 (color, opacity, thickness, brushType)，取消返回 null
 class AnnotationColorPicker extends StatefulWidget {
   final Color initialColor;
   final double initialOpacity;
   final double initialThickness;
+  final int initialBrushType;
+  final bool showBrushPicker; // 是否显示画笔类型选择（自由画笔模式）
 
   const AnnotationColorPicker({
     super.key,
     this.initialColor = const Color(0xFFFFEB3B),
     this.initialOpacity = 0.4,
     this.initialThickness = 8,
+    this.initialBrushType = 0,
+    this.showBrushPicker = false,
   });
 
-  static Future<({Color color, double opacity, double thickness})?> show(
+  static Future<({Color color, double opacity, double thickness, int brushType})?> show(
     BuildContext context, {
     Color initialColor = const Color(0xFFFFEB3B),
     double initialOpacity = 0.4,
     double initialThickness = 8,
+    int initialBrushType = 0,
+    bool showBrushPicker = false,
   }) {
     return showDialog<
-        ({Color color, double opacity, double thickness})>(
+        ({Color color, double opacity, double thickness, int brushType})>(
       context: context,
       builder: (_) => AnnotationColorPicker(
         initialColor: initialColor,
         initialOpacity: initialOpacity,
         initialThickness: initialThickness,
+        initialBrushType: initialBrushType,
+        showBrushPicker: showBrushPicker,
       ),
     );
   }
@@ -41,12 +49,16 @@ class _AnnotationColorPickerState extends State<AnnotationColorPicker> {
   late Color _color;
   late double _opacity;
   late double _thickness;
+  late int _brushType;
   final _hexCtl = TextEditingController();
 
   static const _presets = [
     Color(0xFFFFEB3B), Color(0xFF4CAF50), Color(0xFF2196F3),
-    Color(0xFFE91E63), Color(0xFFFF9800),
+    Color(0xFFE91E63), Color(0xFFFF9800), Color(0xFF000000),
   ];
+
+  static const _brushLabels = ['铅笔', '画笔', '水彩笔'];
+  static const _brushIcons = [Icons.edit, Icons.brush, Icons.water_drop];
 
   @override
   void initState() {
@@ -54,6 +66,7 @@ class _AnnotationColorPickerState extends State<AnnotationColorPicker> {
     _color = widget.initialColor;
     _opacity = widget.initialOpacity;
     _thickness = widget.initialThickness;
+    _brushType = widget.initialBrushType;
     _hexCtl.text = _colorToHex(_color);
   }
 
@@ -134,6 +147,31 @@ class _AnnotationColorPickerState extends State<AnnotationColorPicker> {
           ),
           Text('${_thickness.round()}px', style: const TextStyle(fontSize: 12)),
         ]),
+        // 画笔类型选择（仅自由画笔模式显示）
+        if (widget.showBrushPicker) ...[
+          const SizedBox(height: 12),
+          const Text('画笔类型:', style: TextStyle(fontSize: 13)),
+          const SizedBox(height: 4),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: List.generate(3, (i) {
+            final sel = _brushType == i;
+            return GestureDetector(
+              onTap: () => setState(() => _brushType = i),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: sel ? AppTheme.primaryLight.withAlpha(80) : Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: sel ? AppTheme.primaryDark : Colors.grey.shade300, width: sel ? 2 : 1),
+                ),
+                child: Column(children: [
+                  Icon(_brushIcons[i], size: 22, color: sel ? AppTheme.primaryDark : Colors.grey.shade500),
+                  const SizedBox(height: 2),
+                  Text(_brushLabels[i], style: TextStyle(fontSize: 11, color: sel ? AppTheme.primaryDark : Colors.grey.shade500)),
+                ]),
+              ),
+            );
+          })),
+        ],
       ])),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
@@ -141,6 +179,7 @@ class _AnnotationColorPickerState extends State<AnnotationColorPicker> {
           color: _color.withValues(alpha: _opacity),
           opacity: _opacity,
           thickness: _thickness,
+          brushType: _brushType,
         )), child: const Text('确定')),
       ],
     );
