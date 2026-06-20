@@ -40,6 +40,7 @@ dependencies:
   path: ^1.9.1
   epubx: ^4.0.0
   flutter_html: ^3.0.0
+  flutter_slidable: ^3.1.1
   pdfrx: ^1.3.5
   flutter_markdown_latex: ^0.3.4
   flutter_math_fork: ^0.7.4
@@ -49,7 +50,7 @@ dependencies:
   pdf: ^3.8.4
   html: ^0.15.5
   archive: ^3.4.0
-  desktop_drop: ^0.5.0
+  # desktop_drop temporarily removed for Android build compatibility
 
 dev_dependencies:
   flutter_test:

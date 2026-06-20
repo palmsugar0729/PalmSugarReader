@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.example.palm_sugar_reader"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -23,6 +23,10 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // Only build 64-bit (avoids 32-bit PDFium download issues; all modern devices are 64-bit)
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
     }
 
     buildTypes {

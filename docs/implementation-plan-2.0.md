@@ -23,18 +23,22 @@ Phase 6: 延后        ██░░░░░░░░ 🔜 用户系统本地moc
 | 键盘增强 | 2026-06-19 | 全格式 PgUp/PgDn/Home/End/Space |
 | EPUB 进度恢复 | 2026-06-19 | 退出后再进自动回到上次章节 |
 | 文件拖拽 | 2026-06-19 | desktop_drop 拖入打开 |
+| 滑动删除 | 2026-06-20 | flutter_slidable 替代 Dismissible，无确认弹窗 |
+| 平台菜单 | 2026-06-20 | 移动端 AppBar actions / 桌面端 hover 滑出 |
+| Android 构建 | 2026-06-20 | APK 成功构建，PDFium 手动下载方案 |
 
 ---
 
 ## 总览
 
 ```
-Phase 1: 基础设施    ████░░░░░░  2-3h   右键精简 + 顶部菜单栏
-Phase 2: 设置+主题   ████░░░░░░  2-3h   设置填充 + 背景色 + 字号
-Phase 3: 字体策略    ███░░░░░░░  1-2h   精简字体 + 系统字体优先
-Phase 4: 标注系统    ██████░░░░  4-6h   高亮/划线/批注 + 色盘
-Phase 5: 格式转换    ████░░░░░░  2-3h   MD→TXT + 图片→PDF + MD→EPUB
-Phase 6: 延后        ██░░░░░░░░  -      用户系统本地mock + 语言入口
+Phase 1: 基础设施    ██████████ ✅ 完成
+Phase 2: 设置+主题   ██████████ ✅ 完成
+Phase 3: 字体策略    ██████████ ✅ 完成
+Phase 4: 标注系统    ██████████ ✅ 完成
+Phase 5: 格式转换    ██████████ ✅ 完成 (2026-06-19)
+Phase 6: 延后        ██░░░░░░░░ 🔜 用户系统本地mock + 语言入口
+Phase 7: 三端覆盖    ████████░░ 🟡 Windows ✅ / Android 🟡 / iOS ⏳ (2026-06-20)
 ```
 
 ---
@@ -202,6 +206,33 @@ Phase 6: 延后        ██░░░░░░░░  -      用户系统本地
 
 ---
 
+## Phase 7: 三端覆盖
+
+### 7.1 平台分离菜单 ✅（2026-06-20）
+- **文件**：[top_menu_bar.dart](codes/palm_sugar_reader/lib/widgets/top_menu_bar.dart)、[home_screen.dart](codes/palm_sugar_reader/lib/screens/home_screen.dart)、[reader_screen.dart](codes/palm_sugar_reader/lib/screens/reader_screen.dart)
+- 移动端：`TopMenuOverlay` 透视 child，菜单按钮放入 AppBar `actions`
+- 桌面端：保持 `MouseRegion` hover 滑出
+- **设计原则**：不另建 bar 覆盖内容，复用系统 AppBar
+
+### 7.2 左滑删除 ✅（2026-06-20）
+- **依赖**：`flutter_slidable: ^3.1.1`
+- **文件**：[home_screen.dart](codes/palm_sugar_reader/lib/screens/home_screen.dart)、[reader_screen.dart](codes/palm_sugar_reader/lib/screens/reader_screen.dart)
+- 替代 `Dismissible`，`endActionPane` + `CustomSlidableAction`
+- 无确认弹窗，点击即删
+- 选择模式下不渲染（避免手势冲突）
+
+### 7.3 Android APK 构建 ✅（2026-06-20）
+- **文件**：[pubspec.yaml](codes/palm_sugar_reader/pubspec.yaml)、[build.gradle.kts](codes/palm_sugar_reader/android/app/build.gradle.kts)、[gradle.properties](codes/palm_sugar_reader/android/gradle.properties)
+- 修复项：Gradle 镜像、Kotlin 增量编译跨盘符关闭、compileSdk 36、pdfrx PDFium 手动下载方案
+- 暂移除：`desktop_drop`（桌面专属，Android 不需要）
+- **内存**：[[manual-download-fallback]] — 外网下载回退模式
+- **内存**：[[platform-menu-pattern]] — 平台分离菜单模式
+
+### 7.4 iOS ⏳
+- 目录已配置，等待 Mac 设备
+
+---
+
 ## 依赖关系
 
 ```
@@ -226,3 +257,4 @@ Phase 1 (基础设施)
 | 3 | - | `md_pdf_converter.dart`, `pubspec.yaml`, `assets/fonts/` | NotoSansSC-VF.ttf |
 | 4 | `annotation_service.dart`, `annotation.dart`, `color_picker.dart` | `pdf_reader.dart`, `epub_reader.dart` | - |
 | 5 | `md_txt_converter.dart`, `image_pdf_converter.dart`, `md_epub_converter.dart` | `format_converter.dart` | - |
+| 7 | `manual-download-fallback.md`, `platform-menu-pattern.md` | `top_menu_bar.dart`, `home_screen.dart`, `reader_screen.dart`, `pubspec.yaml`, `build.gradle.kts`, `gradle.properties` | - |

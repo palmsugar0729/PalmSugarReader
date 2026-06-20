@@ -61,8 +61,8 @@ class PdfReaderState extends State<PdfReader> {
       final k = HardwareKeyboard.instance.logicalKeysPressed;
       final ctrl = k.contains(LogicalKeyboardKey.controlLeft) || k.contains(LogicalKeyboardKey.controlRight);
       if (ctrl) {
-        if (e.scrollDelta.dy < 0) _zoomIn();
-        else if (e.scrollDelta.dy > 0) _zoomOut();
+        if (e.scrollDelta.dy < 0) { _zoomIn(); }
+        else if (e.scrollDelta.dy > 0) { _zoomOut(); }
       }
     }
   }

@@ -228,7 +228,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Text('Noto Sans SC — SIL Open Font License'),
             Text('epubx — MIT License'),
             Text('flutter_html — MIT License'),
-            Text('pdfrx — MIT License'),
           ],
         ),
         actions: [

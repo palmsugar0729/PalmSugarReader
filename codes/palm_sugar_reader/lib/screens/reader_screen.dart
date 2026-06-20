@@ -1,5 +1,8 @@
 import 'package:file_picker/file_picker.dart';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 import '../converters/format_converter.dart';
 import '../models/book.dart';
 import '../models/bookmark.dart';
@@ -533,6 +536,39 @@ class _ReaderScreenState extends State<ReaderScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: Text(book.title),
+          actions: (Platform.isAndroid || Platform.isIOS) ? [
+            if (book.format == BookFormat.pdf ||
+                book.format == BookFormat.epub ||
+                book.format == BookFormat.image)
+              IconButton(
+                tooltip: '标注工具',
+                icon: const Icon(Icons.edit),
+                onPressed: _showAnnotHelp,
+              ),
+            if (_isBookmarkable)
+              IconButton(
+                tooltip: '书签',
+                icon: const Icon(Icons.bookmark),
+                onPressed: _showBookmarkSheet,
+              ),
+            if (FormatConverter.getAvailableTargets(book.format).isNotEmpty)
+              IconButton(
+                key: _convertButtonKey,
+                tooltip: '格式转换',
+                icon: const Icon(Icons.transform),
+                onPressed: _showConvertMenu,
+              ),
+            IconButton(
+              tooltip: '背景色',
+              icon: const Icon(Icons.brightness_6),
+              onPressed: _cycleTheme,
+            ),
+            IconButton(
+              tooltip: '设置',
+              icon: const Icon(Icons.settings_outlined),
+              onPressed: _openSettings,
+            ),
+          ] : null,
         ),
         body: _buildReader(),
       ),
@@ -559,19 +595,29 @@ class _BookmarkTile extends StatelessWidget {
         '${bookmark.createdAt.year}-${bookmark.createdAt.month.toString().padLeft(2, '0')}-${bookmark.createdAt.day.toString().padLeft(2, '0')} '
         '${bookmark.createdAt.hour.toString().padLeft(2, '0')}:${bookmark.createdAt.minute.toString().padLeft(2, '0')}';
 
-    return Dismissible(
-      key: Key(bookmark.id),
-      direction: DismissDirection.endToStart,
-      background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20),
-        color: Colors.red[400],
-        child: const Icon(Icons.delete, color: Colors.white),
+    return Slidable(
+      key: ValueKey('bookmark_${bookmark.id}'),
+      endActionPane: ActionPane(
+        motion: const ScrollMotion(),
+        extentRatio: 0.2,
+        children: [
+          CustomSlidableAction(
+            onPressed: (_) => onDelete(),
+            backgroundColor: Colors.red,
+            foregroundColor: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            padding: EdgeInsets.zero,
+            child: const Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.delete, size: 20),
+                SizedBox(height: 2),
+                Text('删除', style: TextStyle(fontSize: 12)),
+              ],
+            ),
+          ),
+        ],
       ),
-      confirmDismiss: (_) async {
-        onDelete();
-        return false; // 我们自己处理删除，不让 Dismissible 自动移除
-      },
       child: ListTile(
         leading: CircleAvatar(
           backgroundColor: AppTheme.primaryLight.withAlpha(80),

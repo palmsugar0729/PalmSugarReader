@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -81,16 +82,21 @@ class _TopMenuOverlayState extends State<TopMenuOverlay> {
     super.dispose();
   }
 
+  bool get _isMobile => Platform.isAndroid || Platform.isIOS;
+
   @override
   Widget build(BuildContext context) {
+    // ── 移动端：菜单按钮由各页面自行放入 AppBar.actions，此处只透传 ──
+    if (_isMobile) {
+      return widget.child;
+    }
+
+    // ── 桌面端：hover 顶部滑出 ──
     return MouseRegion(
       onHover: _onHover,
       child: Stack(
         children: [
-          // 主内容
           widget.child,
-
-          // 菜单栏
           Positioned(
             top: 0,
             left: 0,

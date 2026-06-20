@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:desktop_drop/desktop_drop.dart';
 import '../models/book.dart';
 import '../services/annotation_service.dart';
 import '../services/bookmark_service.dart';
@@ -552,24 +552,13 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // TODO: 恢复桌面端拖拽支持（需要 desktop_drop 包）
+  /*
   /// 处理外部文件拖入
   Future<void> _handleDrop(DropDoneDetails detail) async {
-    if (detail.files.isEmpty) return;
-
-    for (final file in detail.files) {
-      final path = file.path;
-
-      final book = Book.fromFile(path);
-      if (book.isReadable) {
-        await _addAndOpenBook(book);
-        return;
-      }
-    }
-
-    if (mounted) {
-      _showUnsupportedDialog('拖入的文件');
-    }
+    ...
   }
+  */
 
   @override
   Widget build(BuildContext context) {
@@ -599,10 +588,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ],
       child: Scaffold(
         appBar: _isSelectionMode ? _buildSelectionAppBar() : _buildNormalAppBar(),
-        body: DropTarget(
-          onDragDone: (detail) => _handleDrop(detail),
-          child: _recentBooks.isEmpty ? _buildEmptyState() : _buildBookList(),
-        ),
+        body: _recentBooks.isEmpty ? _buildEmptyState() : _buildBookList(),
         floatingActionButton: _isSelectionMode
             ? null
             : FloatingActionButton.extended(
@@ -619,6 +605,23 @@ class _HomeScreenState extends State<HomeScreen> {
     return AppBar(
       title: const Text('PalmSugarReader'),
       automaticallyImplyLeading: false,
+      actions: (Platform.isAndroid || Platform.isIOS) ? [
+        IconButton(
+          tooltip: '批量选择',
+          icon: const Icon(Icons.checklist),
+          onPressed: _recentBooks.isNotEmpty && !_isSelectionMode ? _toggleSelectionMode : null,
+        ),
+        IconButton(
+          tooltip: '背景色',
+          icon: const Icon(Icons.brightness_6),
+          onPressed: _cycleTheme,
+        ),
+        IconButton(
+          tooltip: '设置',
+          icon: const Icon(Icons.settings_outlined),
+          onPressed: _openSettings,
+        ),
+      ] : null,
     );
   }
 
@@ -756,40 +759,29 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         }
 
-        return Dismissible(
-          key: ValueKey(book.id),
-          direction: DismissDirection.endToStart,
-          dismissThresholds: const {DismissDirection.endToStart: 0.25},
-          movementDuration: const Duration(milliseconds: 200),
-          background: Container(
-            alignment: Alignment.centerRight,
-            padding: const EdgeInsets.only(right: 20),
-            decoration: BoxDecoration(
-              color: Colors.red,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(Icons.delete, color: Colors.white),
-          ),
-          onDismissed: (_) => _removeSingle(index),
-          confirmDismiss: (_) async {
-            return await showDialog(
-              context: context,
-              builder: (_) => AlertDialog(
-                title: const Text('确认移除'),
-                content: Text('将 "${book.title}" 从列表中移除？'),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    child: const Text('取消'),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.pop(context, true),
-                    child: const Text('移除', style: TextStyle(color: Colors.red)),
-                  ),
-                ],
+        return Slidable(
+          key: ValueKey('book_${book.id}'),
+          endActionPane: ActionPane(
+            motion: const ScrollMotion(),
+            extentRatio: 0.2,
+            children: [
+              CustomSlidableAction(
+                onPressed: (_) => _removeSingle(index),
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                padding: EdgeInsets.zero,
+                child: const Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.delete, size: 20),
+                    SizedBox(height: 2),
+                    Text('删除', style: TextStyle(fontSize: 12)),
+                  ],
+                ),
               ),
-            );
-          },
+            ],
+          ),
           child: GestureDetector(
             onSecondaryTapUp: (details) =>
                 _showContextMenu(context, book, details.globalPosition),
