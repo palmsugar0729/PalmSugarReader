@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pdfrx/pdfrx.dart';
 import '../models/annotation.dart';
+import '../services/annotation_service.dart';
 import '../theme.dart';
 import '../widgets/annotation_layer.dart';
+import '../widgets/annotation_toolbar.dart';
 import '../widgets/color_picker.dart';
 
 class PdfReader extends StatefulWidget {
@@ -22,11 +24,13 @@ class PdfReaderState extends State<PdfReader> {
   int _currentPage = 1;
   int _pageCount = 1;
   bool _annotMode = false;
-  AnnotationType _tool = AnnotationType.highlight;
-  Color _color = const Color(0xFFFFEB3B);
-  double _opacity = 0.4;
+  AnnotationType _tool = AnnotationType.freeform;
+  Color _color = const Color(0xFF000000);
+  double _opacity = 1.0;
   double _thickness = 8;
-  int _brushType = 0;
+  int _brushType = 1; // 默认画笔
+  bool _allowFingerDraw = false;
+  int _annotRefreshCounter = 0;
 
   @override
   void initState() {
@@ -96,6 +100,12 @@ class PdfReaderState extends State<PdfReader> {
   }
 
   void enterAnnotationMode() async {
+    // 移动端：直接进入标注模式，工具栏接管配置
+    if (AnnotationToolbar.isSupported) {
+      setState(() => _annotMode = true);
+      return;
+    }
+    // 桌面端：保留 Dialog 流程
     final type = await showDialog<AnnotationType>(
       context: context,
       builder: (ctx) => SimpleDialog(
@@ -117,11 +127,26 @@ class PdfReaderState extends State<PdfReader> {
             onPressed: () => Navigator.pop(ctx, AnnotationType.underline),
             child: const ListTile(leading: Icon(Icons.format_underlined, color: Color(0xFF2196F3)), title: Text('划线（桌面）')),
           ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, AnnotationType.eraser),
+            child: const ListTile(leading: Icon(Icons.auto_fix_high, color: Colors.grey), title: Text('橡皮擦')),
+          ),
         ],
       ),
     );
     if (type == null || !mounted) return;
     final isFreeform = type == AnnotationType.freeform;
+    if (type == AnnotationType.eraser) {
+      // 橡皮擦跳过颜色选择器，直接使用白色粗笔
+      setState(() {
+        _annotMode = true;
+        _tool = type;
+        _color = Colors.white;
+        _opacity = 1.0;
+        _thickness = 20;
+      });
+      return;
+    }
     final style = await AnnotationColorPicker.show(
       context,
       showBrushPicker: isFreeform,
@@ -139,6 +164,22 @@ class PdfReaderState extends State<PdfReader> {
 
   void _exitAnnotMode() => setState(() => _annotMode = false);
 
+  void _handleToolbarChange(AnnotationToolConfig cfg) {
+    setState(() {
+      _tool = cfg.tool;
+      _color = cfg.color;
+      _opacity = cfg.opacity;
+      _thickness = cfg.thickness;
+      if (cfg.tool == AnnotationType.freeform) _brushType = cfg.brushType;
+      _allowFingerDraw = cfg.allowFingerDraw;
+    });
+  }
+
+  Future<void> _handleUndo() async {
+    await AnnotationService.popLast(widget.filePath);
+    if (mounted) setState(() => _annotRefreshCounter++);
+  }
+
   List<Widget> _pageOverlaysBuilder(BuildContext context, Rect pageRect, PdfPage page) {
     return [
       Positioned.fill(
@@ -151,6 +192,8 @@ class PdfReaderState extends State<PdfReader> {
           opacity: _opacity,
           thickness: _thickness,
           brushType: _brushType,
+          allowFingerDraw: _allowFingerDraw,
+          refreshCounter: _annotRefreshCounter,
           onClose: _exitAnnotMode,
           child: const SizedBox.expand(),
         ),
@@ -185,13 +228,35 @@ class PdfReaderState extends State<PdfReader> {
             ),
           ),
 
-          // 标注指示器
-          if (_annotMode)
+          // 标注工具栏（移动端）/ 指示器（桌面端）
+          if (_annotMode && AnnotationToolbar.isSupported)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: AnnotationToolbar(
+                initialConfig: AnnotationToolConfig(
+                  tool: _tool,
+                  brushType: _brushType,
+                  color: _color,
+                  opacity: _opacity,
+                  thickness: _thickness,
+                  allowFingerDraw: _allowFingerDraw,
+                ),
+                onChanged: _handleToolbarChange,
+                onUndo: _handleUndo,
+                onExit: _exitAnnotMode,
+              ),
+            ),
+          if (_annotMode && !AnnotationToolbar.isSupported)
             Positioned(left: 0, right: 0, bottom: 0, child: _buildIndicator()),
 
           // 缩放按钮
           Positioned(
-            right: 16, bottom: _annotMode ? 60 : 16,
+            right: 16,
+            bottom: _annotMode
+                ? (AnnotationToolbar.isSupported ? 110 : 60)
+                : 16,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               _ZoomBtn(Icons.add, _zoomIn, '放大'),
               const SizedBox(height: 4),
@@ -220,12 +285,14 @@ class PdfReaderState extends State<PdfReader> {
     }
     if (_tool == AnnotationType.highlight) return '高亮';
     if (_tool == AnnotationType.underline) return '划线';
+    if (_tool == AnnotationType.eraser) return '橡皮擦';
     return '批注';
   }
 
   String _toolHint() {
     if (_tool == AnnotationType.freeform) return '手写/绘画';
     if (_tool == AnnotationType.note) return '点击页面放置便签';
+    if (_tool == AnnotationType.eraser) return '涂抹擦除标注';
     return '拖拽画标注';
   }
 

@@ -10,9 +10,11 @@ import 'package:html/parser.dart' as html_parser;
 
 import '../main.dart';
 import '../models/annotation.dart';
+import '../services/annotation_service.dart';
 import '../services/bookmark_service.dart';
 import '../theme.dart';
 import '../widgets/annotation_layer.dart';
+import '../widgets/annotation_toolbar.dart';
 import '../widgets/color_picker.dart';
 
 // ─── 内部数据模型 ────────────────────────────────────────────────────────────
@@ -84,11 +86,13 @@ class EpubReaderState extends State<EpubReader> {
 
   // ── 标注 ──
   bool _annotMode = false;
-  AnnotationType _annotTool = AnnotationType.highlight;
-  Color _annotColor = const Color(0xFFFFEB3B);
-  double _annotOpacity = 0.4;
+  AnnotationType _annotTool = AnnotationType.freeform;
+  Color _annotColor = const Color(0xFF000000);
+  double _annotOpacity = 1.0;
   double _annotThickness = 8;
-  int _brushType = 0;
+  int _brushType = 1; // 默认画笔
+  bool _allowFingerDraw = false;
+  int _annotRefreshCounter = 0;
 
   // ── 进度持久化 ──
   Timer? _progressSaveTimer;
@@ -444,6 +448,8 @@ class EpubReaderState extends State<EpubReader> {
       opacity: _annotOpacity,
       thickness: _annotThickness,
       brushType: _brushType,
+      allowFingerDraw: _allowFingerDraw,
+      refreshCounter: _annotRefreshCounter,
       onClose: _exitAnnotMode,
       child: SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -637,6 +643,12 @@ class EpubReaderState extends State<EpubReader> {
   // ── 标注模式 ──
 
   void enterAnnotationMode() async {
+    // 移动端：直接进入标注模式，工具栏接管配置
+    if (AnnotationToolbar.isSupported) {
+      setState(() => _annotMode = true);
+      return;
+    }
+    // 桌面端：保留 Dialog 流程
     final type = await showDialog<AnnotationType>(
       context: context,
       builder: (ctx) => SimpleDialog(
@@ -658,12 +670,27 @@ class EpubReaderState extends State<EpubReader> {
             onPressed: () => Navigator.pop(ctx, AnnotationType.underline),
             child: const ListTile(leading: Icon(Icons.format_underlined, color: Color(0xFF2196F3)), title: Text('划线（桌面）')),
           ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, AnnotationType.eraser),
+            child: const ListTile(leading: Icon(Icons.auto_fix_high, color: Colors.grey), title: Text('橡皮擦')),
+          ),
         ],
       ),
     );
     if (type == null || !mounted) return;
 
     final isFreeform = type == AnnotationType.freeform;
+    if (type == AnnotationType.eraser) {
+      // 橡皮擦跳过颜色选择器，直接使用白色粗笔
+      setState(() {
+        _annotMode = true;
+        _annotTool = type;
+        _annotColor = Colors.white;
+        _annotOpacity = 1.0;
+        _annotThickness = 20;
+      });
+      return;
+    }
     final style = await AnnotationColorPicker.show(
       context,
       showBrushPicker: isFreeform,
@@ -681,6 +708,22 @@ class EpubReaderState extends State<EpubReader> {
   }
 
   void _exitAnnotMode() => setState(() => _annotMode = false);
+
+  void _handleToolbarChange(AnnotationToolConfig cfg) {
+    setState(() {
+      _annotTool = cfg.tool;
+      _annotColor = cfg.color;
+      _annotOpacity = cfg.opacity;
+      _annotThickness = cfg.thickness;
+      if (cfg.tool == AnnotationType.freeform) _brushType = cfg.brushType;
+      _allowFingerDraw = cfg.allowFingerDraw;
+    });
+  }
+
+  Future<void> _handleUndo() async {
+    await AnnotationService.popLast(widget.filePath);
+    if (mounted) setState(() => _annotRefreshCounter++);
+  }
 
   // ── 导航 ──
 
@@ -796,6 +839,27 @@ class EpubReaderState extends State<EpubReader> {
                             _buildPage(context, index),
                       ),
                     ),
+
+                    // 标注工具栏（移动端）
+                    if (_annotMode && AnnotationToolbar.isSupported)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: AnnotationToolbar(
+                          initialConfig: AnnotationToolConfig(
+                            tool: _annotTool,
+                            brushType: _brushType,
+                            color: _annotColor,
+                            opacity: _annotOpacity,
+                            thickness: _annotThickness,
+                            allowFingerDraw: _allowFingerDraw,
+                          ),
+                          onChanged: _handleToolbarChange,
+                          onUndo: _handleUndo,
+                          onExit: _exitAnnotMode,
+                        ),
+                      ),
 
                     // 章节加载中指示器
                     if (_isLoadingContent)

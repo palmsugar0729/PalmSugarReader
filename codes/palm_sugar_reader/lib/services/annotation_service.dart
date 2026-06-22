@@ -72,6 +72,15 @@ class AnnotationService {
     await _saveForFile(filePath, list);
   }
 
+  /// 删除最后一笔标注（撤销）
+  static Future<Annotation?> popLast(String filePath) async {
+    final list = await loadForFile(filePath);
+    if (list.isEmpty) return null;
+    final last = list.removeLast();
+    await _saveForFile(filePath, list);
+    return last;
+  }
+
   /// 清除某文件的所有标注
   static Future<void> clearForFile(String filePath) async {
     try {

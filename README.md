@@ -20,7 +20,8 @@ PalmSugarReader 是一个支持多种文档格式的跨平台阅读器，覆盖 
 | TXT 阅读 | 多编码自动检测 + 全局字号联动 + 键盘 ↑↓/PgUp/PgDn/Home/End/Space |
 | Markdown 阅读 | LaTeX 数学公式 + 全局字号联动 + 键盘 ↑↓/PgUp/PgDn/Home/End/Space |
 | 图片阅读 | `InteractiveViewer` 缩放/平移 + 标注图层 + 键盘 +/-/0 |
-| 标注系统 | 统一 `AnnotationLayer`：高亮/划线（拖拽画）+ 批注便签（点击放置、拖动、编辑） |
+| 标注系统 | 统一 `AnnotationLayer`：高亮/划线 + 批注便签 + 自-由画笔（铅笔/画笔/水彩笔） + 橡皮擦 + 撤销 |
+| 平板工具栏 | GoodNotes 风格浮动工具栏 — 即时切换工具/颜色/粗细，可折叠，防误触（仅响应触控笔） |
 | 书签管理 | 手动书签（添加/列表/跳转/删除），per-file JSON 持久化，支持 PDF/EPUB |
 | 格式转换 | TXT ↔ MD、EPUB → MD、MD → PDF、MD → EPUB、MD → TXT、图片 → PDF |
 | 主题系统 | Material3 `#A3C1AD` + 暗色主题 + 跟随系统 |
@@ -109,7 +110,8 @@ PalmSugarReader/
 
 - [AGENTS.md](AGENTS.md) — AI 开发指引与代码规范
 - [docs/PRD.md](docs/PRD.md) — 产品需求文档（唯一真相源）
-- [docs/discussion-2026-06-08.md](docs/discussion-2026-06-08.md) — 最新开发讨论留档
+- [docs/discussion-2026-06-21.md](docs/discussion-2026-06-21.md) — 最新开发讨论留档
+- [docs/implementation-plan-annotation-toolbar.md](docs/implementation-plan-annotation-toolbar.md) — 标注工具栏实施计划
 - [notes/](notes/) — 技术决策与踩坑记录
 
 ## 贡献与反馈

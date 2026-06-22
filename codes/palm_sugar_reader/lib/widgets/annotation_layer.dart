@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../models/annotation.dart';
 import '../services/annotation_service.dart';
@@ -9,6 +10,7 @@ import '../services/annotation_service.dart';
 /// - 高亮/划线：拖拽画矩形（桌面端保留）
 /// - 自由画笔：手写路径，支持铅笔/画笔/水彩笔
 /// - 批注：点击放置便签，可拖动移动，点击查看编辑
+/// - 防误触：默认仅响应触控笔（PointerDeviceKind.stylus），手掌/手指被忽略
 class AnnotationLayer extends StatefulWidget {
   final Widget child;
   final String filePath;
@@ -19,6 +21,9 @@ class AnnotationLayer extends StatefulWidget {
   final double opacity;
   final double thickness;
   final int brushType; // 0=pencil 1=pen 2=watercolor
+  final bool allowFingerDraw; // 是否允许手指书写（默认 false = 仅响应触控笔）
+  final int refreshCounter;   // 外部递增以触发重载标注（撤销等场景）
+  final VoidCallback? onUndo;  // 撤销最后一笔标注
   final VoidCallback? onClose;
 
   const AnnotationLayer({
@@ -32,6 +37,9 @@ class AnnotationLayer extends StatefulWidget {
     this.opacity = 0.4,
     this.thickness = 8,
     this.brushType = 0,
+    this.allowFingerDraw = false,
+    this.refreshCounter = 0,
+    this.onUndo,
     this.onClose,
   });
 
@@ -50,7 +58,17 @@ class _AnnotationLayerState extends State<AnnotationLayer> {
   // ── 自由画笔 ──
   final List<Offset> _currentStroke = [];
 
-  bool get _isFreeform => widget.tool == AnnotationType.freeform;
+  bool get _isFreeform =>
+      widget.tool == AnnotationType.freeform ||
+      widget.tool == AnnotationType.eraser;
+
+  /// 撤销最后一笔标注（由外部工具栏调用）
+  Future<void> undoLast() async {
+    final last = await AnnotationService.popLast(widget.filePath);
+    if (last != null && mounted) {
+      setState(() => _annotations.removeWhere((a) => a.id == last.id));
+    }
+  }
 
   @override
   void initState() {
@@ -61,7 +79,9 @@ class _AnnotationLayerState extends State<AnnotationLayer> {
   @override
   void didUpdateWidget(covariant AnnotationLayer old) {
     super.didUpdateWidget(old);
-    if (old.filePath != widget.filePath || old.pageIndex != widget.pageIndex) {
+    if (old.filePath != widget.filePath ||
+        old.pageIndex != widget.pageIndex ||
+        old.refreshCounter != widget.refreshCounter) {
       _annotations = [];
       _load();
     }
@@ -88,6 +108,7 @@ class _AnnotationLayerState extends State<AnnotationLayer> {
 
   void _onDown(PointerDownEvent e) {
     if (!widget.enabled) return;
+    if (!widget.allowFingerDraw && e.kind != PointerDeviceKind.stylus) return;
     final box = context.findRenderObject() as RenderBox?;
     if (box == null) return;
     _pageSize = box.size;
@@ -112,6 +133,7 @@ class _AnnotationLayerState extends State<AnnotationLayer> {
   }
 
   void _onMove(PointerMoveEvent e) {
+    if (!widget.allowFingerDraw && e.kind != PointerDeviceKind.stylus) return;
     if (_dragging != null) return;
     if (!_drawing) return;
     if (_isFreeform) {
@@ -122,6 +144,7 @@ class _AnnotationLayerState extends State<AnnotationLayer> {
   }
 
   void _onUp(PointerUpEvent e) async {
+    if (!widget.allowFingerDraw && e.kind != PointerDeviceKind.stylus) return;
     // ── 拖动便签结束 ──
     if (_dragging != null) {
       if (_startPoint != null) {
@@ -286,13 +309,22 @@ class _AnnotationLayerState extends State<AnnotationLayer> {
   }
 
   // ── 渲染 ──
+  // 标注渲染始终存在（修复退出标注后标注不可见），交互层仅在 enabled 时叠加
 
   @override
   Widget build(BuildContext context) {
-    if (!widget.enabled) return widget.child;
     return LayoutBuilder(
       builder: (context, constraints) {
         _pageSize = Size(constraints.maxWidth, constraints.maxHeight);
+        final stack = Stack(
+          clipBehavior: Clip.hardEdge,
+          children: [
+            widget.child,
+            CustomPaint(size: _pageSize, painter: _AnnPainter(annotations: _annotations, pageSize: _pageSize)),
+            if (_drawing && widget.enabled) _buildPreview(),
+          ],
+        );
+        if (!widget.enabled) return stack;
         return Listener(
           onPointerDown: _onDown,
           onPointerMove: _onMove,
@@ -300,14 +332,7 @@ class _AnnotationLayerState extends State<AnnotationLayer> {
           child: GestureDetector(
             onTapUp: _onTap,
             behavior: HitTestBehavior.translucent,
-            child: Stack(
-              clipBehavior: Clip.hardEdge,
-              children: [
-                widget.child,
-                CustomPaint(size: _pageSize, painter: _AnnPainter(annotations: _annotations, pageSize: _pageSize)),
-                if (_drawing) _buildPreview(),
-              ],
-            ),
+            child: stack,
           ),
         );
       },
@@ -360,7 +385,7 @@ class _AnnPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     for (final ann in annotations) {
-      if (ann.type == AnnotationType.freeform) {
+      if (ann.type == AnnotationType.freeform || ann.type == AnnotationType.eraser) {
         _drawFreeform(canvas, ann);
       } else if (ann.type == AnnotationType.highlight || ann.type == AnnotationType.underline) {
         _drawRect(canvas, ann);
@@ -380,10 +405,8 @@ class _AnnPainter extends CustomPainter {
     path.moveTo(pts[0] * pw, pts[1] * ph);
 
     if (pts.length == 4) {
-      // 只有两个点 → 直线
       path.lineTo(pts[2] * pw, pts[3] * ph);
     } else {
-      // 多个点 → 贝塞尔平滑
       for (int i = 2; i < pts.length - 2; i += 2) {
         final x1 = pts[i] * pw;
         final y1 = pts[i + 1] * ph;
@@ -393,12 +416,23 @@ class _AnnPainter extends CustomPainter {
         final midY = (y1 + y2) / 2;
         path.quadraticBezierTo(x1, y1, midX, midY);
       }
-      // 最后一个点
       path.lineTo(pts[pts.length - 2] * pw, pts[pts.length - 1] * ph);
     }
 
-    final paint = _brushPaint(ann);
+    final paint = ann.type == AnnotationType.eraser
+        ? _eraserPaint(ann)
+        : _brushPaint(ann);
     canvas.drawPath(path, paint);
+  }
+
+  Paint _eraserPaint(Annotation ann) {
+    return Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..color = const Color(0xFFFFFFFF)
+      ..strokeWidth = ann.thickness.clamp(14, 40)
+      ..blendMode = BlendMode.srcOver;
   }
 
   Paint _brushPaint(Annotation ann) {

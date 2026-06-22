@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 /// 标注类型
-enum AnnotationType { highlight, underline, note, freeform }
+enum AnnotationType { highlight, underline, note, freeform, eraser }
 
 /// 画笔类型（仅 freeform 模式使用）
 enum BrushType { pencil, pen, watercolor }

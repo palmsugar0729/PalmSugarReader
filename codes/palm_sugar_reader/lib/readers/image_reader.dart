@@ -2,8 +2,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/annotation.dart';
+import '../services/annotation_service.dart';
 import '../theme.dart';
 import '../widgets/annotation_layer.dart';
+import '../widgets/annotation_toolbar.dart';
 import '../widgets/color_picker.dart';
 
 class ImageReader extends StatefulWidget {
@@ -18,11 +20,13 @@ class ImageReaderState extends State<ImageReader> {
   final FocusNode _focusNode = FocusNode();
   double _currentScale = 1.0;
   bool _annotMode = false;
-  AnnotationType _tool = AnnotationType.highlight;
-  Color _color = const Color(0xFFFFEB3B);
-  double _opacity = 0.4;
+  AnnotationType _tool = AnnotationType.freeform;
+  Color _color = const Color(0xFF000000);
+  double _opacity = 1.0;
   double _thickness = 8;
-  int _brushType = 0;
+  int _brushType = 1; // 默认画笔
+  bool _allowFingerDraw = false;
+  int _annotRefreshCounter = 0;
 
   @override
   void dispose() {
@@ -92,6 +96,12 @@ class ImageReaderState extends State<ImageReader> {
   }
 
   void enterAnnotationMode() async {
+    // 移动端：直接进入标注模式，工具栏接管配置
+    if (AnnotationToolbar.isSupported) {
+      setState(() => _annotMode = true);
+      return;
+    }
+    // 桌面端：保留 Dialog 流程
     final type = await showDialog<AnnotationType>(
       context: context,
       builder: (ctx) => SimpleDialog(
@@ -113,11 +123,26 @@ class ImageReaderState extends State<ImageReader> {
             onPressed: () => Navigator.pop(ctx, AnnotationType.underline),
             child: const ListTile(leading: Icon(Icons.format_underlined, color: Color(0xFF2196F3)), title: Text('划线（桌面）')),
           ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, AnnotationType.eraser),
+            child: const ListTile(leading: Icon(Icons.auto_fix_high, color: Colors.grey), title: Text('橡皮擦')),
+          ),
         ],
       ),
     );
     if (type == null || !mounted) return;
     final isFreeform = type == AnnotationType.freeform;
+    if (type == AnnotationType.eraser) {
+      // 橡皮擦跳过颜色选择器，直接使用白色粗笔
+      setState(() {
+        _annotMode = true;
+        _tool = type;
+        _color = Colors.white;
+        _opacity = 1.0;
+        _thickness = 20;
+      });
+      return;
+    }
     final style = await AnnotationColorPicker.show(
       context,
       showBrushPicker: isFreeform,
@@ -134,6 +159,22 @@ class ImageReaderState extends State<ImageReader> {
   }
 
   void _exit() => setState(() => _annotMode = false);
+
+  void _handleToolbarChange(AnnotationToolConfig cfg) {
+    setState(() {
+      _tool = cfg.tool;
+      _color = cfg.color;
+      _opacity = cfg.opacity;
+      _thickness = cfg.thickness;
+      if (cfg.tool == AnnotationType.freeform) _brushType = cfg.brushType;
+      _allowFingerDraw = cfg.allowFingerDraw;
+    });
+  }
+
+  Future<void> _handleUndo() async {
+    await AnnotationService.popLast(widget.filePath);
+    if (mounted) setState(() => _annotRefreshCounter++);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -153,6 +194,8 @@ class ImageReaderState extends State<ImageReader> {
             opacity: _opacity,
             thickness: _thickness,
             brushType: _brushType,
+            allowFingerDraw: _allowFingerDraw,
+            refreshCounter: _annotRefreshCounter,
             onClose: _exit,
             child: InteractiveViewer(
               transformationController: _tc,
@@ -185,9 +228,35 @@ class ImageReaderState extends State<ImageReader> {
             ),
           ),
 
+          // 标注工具栏（移动端）/ 指示器（桌面端）
+          if (_annotMode && AnnotationToolbar.isSupported)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: AnnotationToolbar(
+                initialConfig: AnnotationToolConfig(
+                  tool: _tool,
+                  brushType: _brushType,
+                  color: _color,
+                  opacity: _opacity,
+                  thickness: _thickness,
+                  allowFingerDraw: _allowFingerDraw,
+                ),
+                onChanged: _handleToolbarChange,
+                onUndo: _handleUndo,
+                onExit: _exit,
+              ),
+            ),
+          if (_annotMode && !AnnotationToolbar.isSupported)
+            Positioned(left: 0, right: 0, bottom: 0, child: _buildIndicator()),
+
           // 缩放按钮
           Positioned(
-            right: 16, bottom: _annotMode ? 60 : 16,
+            right: 16,
+            bottom: _annotMode
+                ? (AnnotationToolbar.isSupported ? 110 : 60)
+                : 16,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               _ZBtn(Icons.add, _zoomIn, '放大 (+)'),
               const SizedBox(height: 4),
@@ -200,10 +269,6 @@ class ImageReaderState extends State<ImageReader> {
                   _annotMode ? '退出标注' : '标注模式'),
             ]),
           ),
-
-          // 标注指示器
-          if (_annotMode)
-            Positioned(left: 0, right: 0, bottom: 0, child: _buildIndicator()),
         ],
       ),
     );
@@ -217,6 +282,8 @@ class ImageReaderState extends State<ImageReader> {
       label = '高亮';
     } else if (_tool == AnnotationType.underline) {
       label = '划线';
+    } else if (_tool == AnnotationType.eraser) {
+      label = '橡皮擦';
     } else {
       label = '批注';
     }
