@@ -106,6 +106,26 @@ metadata:
 - **相关文件**：[lib/readers/epub_reader.dart](../../codes/palm_sugar_reader/lib/readers/epub_reader.dart)
 - **状态**：🟢 已修复
 
+### 14. 退出标注模式后标注不可见（2026-06-22）
+
+- **发现时间**：2026-06-22
+- **报告人**：@palmsugar
+- **现象**：Android 平板端在标注模式内画的标注（高亮/画笔等），退出标注模式后全部看不见，再进入标注模式才显示
+- **根因**：`AnnotationLayer.build()` 中 `if (!widget.enabled) return widget.child;` 直接跳过了整个 Stack，包括渲染已保存标注的 `CustomPaint`（`_AnnPainter`）
+- **修复**：拆分渲染与交互 — `CustomPaint` 始终存在于 Stack 中，`Listener`/`GestureDetector` 仅在 `enabled` 时叠加；`_buildPreview()` 也加 `widget.enabled` 条件
+- **相关文件**：[lib/widgets/annotation_layer.dart](../../codes/palm_sugar_reader/lib/widgets/annotation_layer.dart)
+- **状态**：🟢 已修复
+
+### 15. EPUB 标注模式无退出按钮（2026-06-22）
+
+- **发现时间**：2026-06-22
+- **报告人**：@palmsugar
+- **现象**：EPUB 阅读器进入标注模式后，没有"退出"按钮，用户只能通过再次长按触发 dialog 来退出（但 dialog 取消不会改变模式）
+- **根因**：EPUB 阅读器缺少 `_buildIndicator()` 调用，PDF 和 Image 阅读器有此指示条但 EPUB 遗漏
+- **修复**：新工具栏自带退出按钮，PDF/Image/EPUB 三端统一 — 工具行最右侧"✕退出"按钮
+- **相关文件**：[lib/readers/epub_reader.dart](../../codes/palm_sugar_reader/lib/readers/epub_reader.dart)
+- **状态**：🟢 已修复
+
 ---
 
 ## 🟡 已知问题 / 待优化
